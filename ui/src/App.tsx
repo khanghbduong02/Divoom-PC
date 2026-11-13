@@ -41,6 +41,7 @@ function makeMetricLayer(metric: MetricKey, stacked: number): Layer {
     kind: "metric",
     metric,
     widget: "number",
+    history_minutes: 10,
     text: "",
     source: "static",
     x: 6,
@@ -66,6 +67,7 @@ function makeTextLayer(stacked: number): Layer {
     kind: "text",
     metric: "cpu_percent",
     widget: "number",
+    history_minutes: 10,
     text: "LABEL",
     source: "static",
     x: 6,
@@ -109,6 +111,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [stageScale, setStageScale] = useState(4);
+  const [temperatureUnit, setTemperatureUnit] = useState<"c" | "f">("c");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
@@ -152,6 +155,7 @@ export default function App() {
   const loadConfig = useCallback(async () => {
     const config = await api.getConfig();
     setDevice(config.device);
+    setTemperatureUnit(config.settings.temperature_unit);
   }, []);
 
   useEffect(() => {
@@ -515,6 +519,7 @@ export default function App() {
             layer={selectedLayer}
             presets={presets}
             uploading={uploading}
+            temperatureUnit={temperatureUnit}
             onLayer={(patch) => selectedLayer && updateLayer(selectedLayer.id, patch)}
             onPanel={(patch) => updatePanel(selectedPanel, (current) => ({ ...current, ...patch }))}
             onBackground={(patch) =>
@@ -537,7 +542,13 @@ export default function App() {
         onChanged={() => void loadConfig()}
       />
       <Diagnostics open={diagnosticsOpen} onClose={() => setDiagnosticsOpen(false)} />
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Settings
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          void loadConfig();
+        }}
+      />
       <Help open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );

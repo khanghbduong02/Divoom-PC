@@ -147,6 +147,12 @@ export const api = {
       auto_push: boolean;
       last_push_at: number | null;
       skipped_frames: number;
+      temperature_unit: "c" | "f";
+      hardware: {
+        nvidia: boolean;
+        cpu_temp_source: string | null;
+        cpu_temp_hint: string | null;
+      };
     }>("/api/diagnostics"),
   uploadMedia: async (file: File) => {
     const form = new FormData();

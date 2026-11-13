@@ -21,13 +21,16 @@ function label(layer: Layer): string {
     return layer.text || "Text";
   }
   const meta = metricMeta(layer.metric);
-  return layer.widget === "bar" ? `${meta.label} bar` : meta.label;
+  if (layer.widget === "bar") return `${meta.label} bar`;
+  if (layer.widget === "line") return `${meta.label} graph`;
+  return meta.label;
 }
 
 function detail(layer: Layer): string {
   if (layer.kind === "text") {
     return layer.source === "static" ? `At ${layer.x}, ${layer.y}` : "Automatic";
   }
+  if (layer.widget === "line") return `Past ${layer.history_minutes} min`;
   return `${layer.w} × ${layer.h} pixels`;
 }
 

@@ -39,13 +39,18 @@ export function metricMeta(key: MetricKey): MetricMeta {
 }
 
 export type Align = "left" | "center" | "right";
-export type Widget = "number" | "bar";
+export type Widget = "number" | "bar" | "line";
+
+export function isTemperatureMetric(metric: MetricKey): boolean {
+  return metric === "cpu_temp" || metric === "gpu_temp";
+}
 
 export interface Layer {
   id: string;
   kind: "metric" | "text";
   metric: MetricKey;
   widget: Widget;
+  history_minutes: number;
   text: string;
   source: "static" | "clock" | "date";
   x: number;
@@ -100,6 +105,7 @@ export interface Settings {
   allow_lan: boolean;
   auto_push: boolean;
   autostart: boolean;
+  temperature_unit: "c" | "f";
 }
 
 export interface SystemInfo {

@@ -18,6 +18,11 @@ interface Report {
   last_error: { kind: string; message: string; raw: string | null; hint: string | null } | null;
   sensors: SensorValues;
   data_dir: string;
+  hardware: {
+    nvidia: boolean;
+    cpu_temp_source: string | null;
+    cpu_temp_hint: string | null;
+  };
 }
 
 export default function Diagnostics({ open, onClose }: Props) {
@@ -105,7 +110,7 @@ export default function Diagnostics({ open, onClose }: Props) {
           </section>
 
           <section>
-            <h3>Sensor readings</h3>
+            <h3>Sensors</h3>
             <dl className="facts">
               {Object.entries(report.sensors).map(([key, value]) => (
                 <div key={key} className="fact-row">
@@ -114,6 +119,26 @@ export default function Diagnostics({ open, onClose }: Props) {
                 </div>
               ))}
             </dl>
+            {report.sensors.cpu_temp === null && report.hardware.cpu_temp_hint && (
+              <>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  {report.hardware.cpu_temp_hint}
+                </p>
+                <a
+                  className="button-small download-link"
+                  href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Get LibreHardwareMonitor
+                </a>
+              </>
+            )}
+            {report.hardware.cpu_temp_source && (
+              <p className="hint" style={{ marginTop: 8 }}>
+                CPU temperature comes from {report.hardware.cpu_temp_source}.
+              </p>
+            )}
           </section>
 
           <section>

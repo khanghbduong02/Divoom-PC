@@ -142,6 +142,25 @@ export default function Settings({ open, onClose }: Props) {
             </section>
 
             <section className="step">
+              <h3>Temperatures</h3>
+              <div className="inline-row">
+                <label htmlFor="temp-unit">Show temperatures in</label>
+                <select
+                  id="temp-unit"
+                  value={settings.temperature_unit}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void save({ temperature_unit: event.target.value as "c" | "f" })
+                  }
+                >
+                  <option value="c">Celsius (°C)</option>
+                  <option value="f">Fahrenheit (°F)</option>
+                </select>
+              </div>
+              <p className="hint">Applies to every CPU and GPU temperature on all panels.</p>
+            </section>
+
+            <section className="step">
               <h3>Start with Windows</h3>
               <label className="check-row">
                 <input

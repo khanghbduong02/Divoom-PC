@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Align, Layer, MetricKey, Panel, PresetMeta, Widget } from "../types";
-import { METRICS, metricMeta } from "../types";
+import { METRICS, isTemperatureMetric, metricMeta } from "../types";
 import { mediaUrl } from "../api";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   layer: Layer | null;
   presets: PresetMeta[];
   uploading: boolean;
+  temperatureUnit: "c" | "f";
   onLayer: (patch: Partial<Layer>) => void;
   onPanel: (patch: Partial<Panel>) => void;
   onBackground: (patch: Partial<Panel["background"]>) => void;
@@ -56,6 +57,7 @@ export default function Inspector({
   layer,
   presets,
   uploading,
+  temperatureUnit,
   onLayer,
   onPanel,
   onBackground,
@@ -65,6 +67,10 @@ export default function Inspector({
 }: Props) {
   const [themeChoice, setThemeChoice] = useState("");
   const background = panel.background;
+  const showsValue = layer !== null && (layer.kind === "text" || layer.widget === "number");
+  const temperature =
+    layer !== null && layer.kind === "metric" && isTemperatureMetric(layer.metric);
+  const historyOptions = [5, 10, 15, 30, 60, 120, 180];
 
   return (
     <div className="inspector">
@@ -223,10 +229,41 @@ export default function Inspector({
                   value={layer.widget}
                   onChange={(event) => onLayer({ widget: event.target.value as Widget })}
                 >
-                  <option value="number">Large number</option>
+                  <option value="number">Value right now</option>
                   <option value="bar">Progress bar</option>
+                  <option value="line">Line graph (history)</option>
                 </select>
               </Field>
+              {layer.widget === "line" && (
+                <>
+                  <Field label="History window">
+                    <select
+                      value={layer.history_minutes}
+                      onChange={(event) =>
+                        onLayer({ history_minutes: Number(event.target.value) })
+                      }
+                    >
+                      {!historyOptions.includes(layer.history_minutes) && (
+                        <option value={layer.history_minutes}>
+                          Past {layer.history_minutes} minutes
+                        </option>
+                      )}
+                      {historyOptions.map((minutes) => (
+                        <option key={minutes} value={minutes}>
+                          {minutes === 60
+                            ? "Past hour"
+                            : minutes > 60
+                              ? `Past ${minutes / 60} hours`
+                              : `Past ${minutes} minutes`}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <p className="hint">
+                    The graph fills up while the app runs, so it starts empty after a restart.
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -289,8 +326,8 @@ export default function Inspector({
             </span>
           </Field>
 
-          {layer.kind === "metric" && layer.widget === "bar" && (
-            <Field label="Bar track">
+          {layer.kind === "metric" && layer.widget !== "number" && (
+            <Field label={layer.widget === "line" ? "Graph background" : "Bar track"}>
               <span className="color-field">
                 <input
                   type="color"
@@ -321,7 +358,7 @@ export default function Inspector({
           )}
 
           <div className="field-grid">
-            {!layer.auto_scale && (
+            {!layer.auto_scale && showsValue && (
               <Field label="Text size">
                 <NumberInput
                   value={layer.scale}
@@ -331,21 +368,32 @@ export default function Inspector({
                 />
               </Field>
             )}
-            <Field label="Decimals">
-              <NumberInput
-                value={layer.decimals}
-                min={0}
-                max={3}
-                onChange={(decimals) => onLayer({ decimals })}
-              />
-            </Field>
-            <Field label="Unit">
-              <input
-                type="text"
-                value={layer.unit}
-                onChange={(event) => onLayer({ unit: event.target.value })}
-              />
-            </Field>
+            {showsValue && (
+              <>
+                <Field label="Decimals">
+                  <NumberInput
+                    value={layer.decimals}
+                    min={0}
+                    max={3}
+                    onChange={(decimals) => onLayer({ decimals })}
+                  />
+                </Field>
+                <Field label="Unit">
+                  {temperature ? (
+                    <span className="static-value">
+                      {temperatureUnit === "f" ? "°F" : "°C"}
+                      <em>from Settings</em>
+                    </span>
+                  ) : (
+                    <input
+                      type="text"
+                      value={layer.unit}
+                      onChange={(event) => onLayer({ unit: event.target.value })}
+                    />
+                  )}
+                </Field>
+              </>
+            )}
             {layer.kind === "metric" && (
               <>
                 <Field label="Minimum">

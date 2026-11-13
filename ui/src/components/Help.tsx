@@ -92,7 +92,9 @@ export default function Help({ open, onClose }: Props) {
             </p>
             <p className="hint">
               No Send button needed: changes are saved as you type and pushed to the display every
-              couple of seconds. <em>Send</em> is there for an instant refresh.
+              couple of seconds. <em>Send</em> is there for an instant refresh. Every reading can be
+              a big value, a progress bar, or a line graph of the last 5 minutes to 3 hours, and
+              temperatures can be shown in Celsius or Fahrenheit from Settings.
             </p>
           </section>
 
@@ -126,6 +128,12 @@ export default function Help({ open, onClose }: Props) {
               Panels stuck on “loading” or the display not changing? Open <em>Troubleshooting</em> in
               the top bar: it shows the last reply from the display and what to try. The device only
               accepts one connection, so the phone app is the usual culprit.
+            </p>
+            <p>
+              CPU temperature stays at <code>--</code>? Windows does not let normal apps read it.
+              Install <strong>LibreHardwareMonitor</strong>, run it as administrator once and leave it
+              running; the reading appears by itself within half a minute. GPU temperatures do not
+              need it.
             </p>
             {system && (
               <p className="hint">

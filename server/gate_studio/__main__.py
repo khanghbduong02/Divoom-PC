@@ -47,6 +47,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--no-tray", action="store_true")
     parser.add_argument("--no-discovery", action="store_true", help="skip the startup LAN discovery")
+    parser.add_argument(
+        "--no-autostart", action="store_true", help="do not register at login (used by smoke tests)"
+    )
     return parser.parse_args(argv)
 
 
@@ -65,9 +68,13 @@ def setup_logging(store: ConfigStore) -> None:
     )
 
 
-def already_running(port: int) -> bool:
+def already_running(port: int, token: str) -> bool:
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/health",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.0) as reply:
+        with urllib.request.urlopen(request, timeout=1.0) as reply:
             payload = json.loads(reply.read())
     except Exception:  # noqa: BLE001 - anything here means "not our agent"
         return False
@@ -143,7 +150,7 @@ def main(argv: list[str] | None = None) -> None:
     host = args.host or ("0.0.0.0" if bind_lan else "127.0.0.1")
     url = f"http://localhost:{args.port}/?token={quote(token)}"
 
-    if already_running(args.port):
+    if already_running(args.port, token):
         print("Gate Theme Studio is already running — opening the editor.")
         if not (args.no_browser or args.silent):
             webbrowser.open(url)
@@ -151,7 +158,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # A packaged build keeps itself registered at login; source checkouts do not
     # touch the registry unless the user flips the switch in Settings.
-    if getattr(sys, "frozen", False) and config.settings.autostart:
+    if getattr(sys, "frozen", False) and config.settings.autostart and not args.no_autostart:
         desktop.set_autostart(True)
 
     app = create_app(store)
@@ -211,8 +218,15 @@ def main(argv: list[str] | None = None) -> None:
             )
         except KeyboardInterrupt:
             pass
+        server.should_exit = True
+    else:
+        # headless: the HTTP thread owns the lifetime
+        try:
+            while thread.is_alive():
+                thread.join(timeout=0.5)
+        except KeyboardInterrupt:
+            server.should_exit = True
 
-    server.should_exit = True
     thread.join(timeout=5)
     log.info("agent stopped")
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Callable
 
 APP_NAME = "GateThemeStudio"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -91,7 +92,7 @@ def run_tray(
     toggle_updates,
     open_settings,
     quit_app,
-    updates_enabled: bool,
+    updates_enabled: Callable[[], bool],
 ):
     """Create and show a system-tray icon. Returns the icon, or None.
 

@@ -28,14 +28,30 @@ def parse_color(value: str) -> tuple[int, int, int]:
         return (255, 255, 255)
 
 
-def _draw_layer(draw: ImageDraw.ImageDraw, layer: Layer, values: dict[str, float | None], now: datetime) -> None:
+History = dict[str, list[tuple[float, float | None]]]
+
+
+def _draw_layer(
+    draw: ImageDraw.ImageDraw,
+    layer: Layer,
+    values: dict[str, float | None],
+    now: datetime,
+    history: History,
+    temperature_unit: str,
+) -> None:
     if not layer.visible:
         return
     value = values.get(layer.metric) if layer.kind == "metric" else None
     if layer.kind == "metric" and layer.widget == "bar":
         widgets.draw_bar(draw, layer, value)
+    elif layer.kind == "metric" and layer.widget == "line":
+        cutoff = now.timestamp() - max(1, layer.history_minutes) * 60
+        samples = [
+            (stamp, item) for stamp, item in history.get(layer.metric, []) if stamp >= cutoff
+        ]
+        widgets.draw_line(draw, layer, samples, temperature_unit)
     else:
-        widgets.draw_number(draw, layer, value, now)
+        widgets.draw_number(draw, layer, value, now, temperature_unit)
 
 
 def render_panel(
@@ -43,9 +59,13 @@ def render_panel(
     values: dict[str, float | None] | None = None,
     media_dir: Path | None = None,
     now: datetime | None = None,
+    *,
+    history: History | None = None,
+    temperature_unit: str = "c",
 ) -> Image.Image:
     values = values or {}
     now = now or datetime.now()
+    history = history or {}
     background = panel.background
     base_color = parse_color(background.color)
 
@@ -63,7 +83,7 @@ def render_panel(
 
     draw = ImageDraw.Draw(canvas)
     for layer in panel.layers:
-        _draw_layer(draw, layer, values, now)
+        _draw_layer(draw, layer, values, now, history, temperature_unit)
     return canvas
 
 
@@ -72,9 +92,15 @@ def render_all(
     values: dict[str, float | None] | None = None,
     media_dir: Path | None = None,
     now: datetime | None = None,
+    *,
+    history: History | None = None,
+    temperature_unit: str = "c",
 ) -> list[Image.Image]:
     now = now or datetime.now()
-    return [render_panel(panel, values, media_dir, now) for panel in theme.panels]
+    return [
+        render_panel(panel, values, media_dir, now, history=history, temperature_unit=temperature_unit)
+        for panel in theme.panels
+    ]
 
 
 def encode_png(image: Image.Image) -> bytes:

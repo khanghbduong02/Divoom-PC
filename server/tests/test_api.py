@@ -198,3 +198,31 @@ def test_autostart_endpoint_is_safe_without_registry(client: TestClient) -> None
     response = client.post("/api/system/autostart", json={"enabled": False})
     assert response.status_code == 200
     assert response.json()["supported"] in (True, False)
+
+
+def test_temperature_unit_round_trip(client: TestClient) -> None:
+    body = client.put("/api/config/settings", json={"temperature_unit": "f"}).json()
+    assert body["settings"]["temperature_unit"] == "f"
+    assert client.get("/api/config").json()["settings"]["temperature_unit"] == "f"
+    assert client.get("/api/diagnostics").json()["temperature_unit"] == "f"
+
+
+def test_diagnostics_reports_temp_source(client: TestClient) -> None:
+    hardware = client.get("/api/diagnostics").json()["hardware"]
+    assert "cpu_temp_source" in hardware
+    assert "cpu_temp_hint" in hardware
+
+
+def test_line_layer_round_trips_through_the_theme_api(client: TestClient) -> None:
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["layers"] = [
+        {
+            "id": "line1", "kind": "metric", "metric": "cpu_percent", "widget": "line",
+            "history_minutes": 45, "x": 0, "y": 100, "w": 128, "h": 28,
+            "color": "#FFFFFF", "track_color": "#222222", "visible": True,
+        }
+    ]
+    saved = client.put("/api/theme", json=theme).json()["theme"]
+    layer = saved["panels"][0]["layers"][0]
+    assert layer["widget"] == "line"
+    assert layer["history_minutes"] == 45

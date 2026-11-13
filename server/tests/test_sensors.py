@@ -59,3 +59,22 @@ def test_net_rates_are_non_negative() -> None:
     snapshot = collector.snapshot()
     for key in ("net_up", "net_down"):
         assert snapshot[key] is None or snapshot[key] >= 0
+
+
+def test_history_window_keeps_timestamps_and_filters_old_samples() -> None:
+    collector = SensorCollector(interval=0.2)
+    collector._sample()
+    time.sleep(0.05)
+    collector._sample()
+    window = collector.history_window(60)
+    stamps = [stamp for stamp, _ in window["cpu_percent"]]
+    assert len(stamps) >= 2
+    assert stamps == sorted(stamps)
+    future = collector.history_window(60, now=time.time() + 3600)
+    assert future["cpu_percent"] == []
+
+
+def test_history_bounds_are_configurable() -> None:
+    collector = SensorCollector(interval=0.5, history_seconds=3600)
+    assert collector._history["cpu_percent"].maxlen >= 7200
+    assert collector.history()["cpu_percent"] == []

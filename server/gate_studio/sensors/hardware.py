@@ -1,8 +1,9 @@
 """Best-effort CPU/GPU readings that need more than psutil.
 
 * NVIDIA GPUs: NVML (no elevation needed).
-* CPU/AMD/Intel temperatures and loads: LibreHardwareMonitor's WMI namespace,
-  which only answers when LibreHardwareMonitor runs with enough privilege.
+* CPU/AMD/Intel temperatures and loads: the WMI namespace exposed by
+  LibreHardwareMonitor (or the older OpenHardwareMonitor). Windows itself has no
+  unprivileged CPU-temperature API, so one of those helpers has to be running.
 
 Every source is optional. When one is missing the value stays ``None`` so the
 panel shows ``--`` instead of a wrong number, and nothing here ever raises into
@@ -17,6 +18,17 @@ import time
 RETRY_SECONDS = 30.0
 LHM_REFRESH_SECONDS = 2.0
 
+SENSOR_NAMESPACES: tuple[tuple[str, str], ...] = (
+    ("root/LibreHardwareMonitor", "LibreHardwareMonitor"),
+    ("root/OpenHardwareMonitor", "OpenHardwareMonitor"),
+)
+
+CPU_TEMP_HINT = (
+    "Windows has no unprivileged CPU-temperature API. Install LibreHardwareMonitor "
+    "(or OpenHardwareMonitor), run it as administrator and leave it running; this "
+    "reading appears within 30 seconds. GPU temperatures work without it."
+)
+
 
 class HardwareReader:
     def __init__(self) -> None:
@@ -26,6 +38,8 @@ class HardwareReader:
         self._lhm_failed_at: float | None = None
         self._lhm_last_read = 0.0
         self._lhm_values: dict[str, float | None] = {}
+        self._sensor_source: str | None = None
+        self._cpu_temp_source: str | None = None
 
     # -- NVIDIA --------------------------------------------------------
     def _nvml_handle(self) -> tuple[object, object] | None:
@@ -84,15 +98,21 @@ class HardwareReader:
             return None
         try:
             import wmi
-
-            conn = wmi.WMI(namespace="root/LibreHardwareMonitor")
-            if not conn.Sensor():
-                raise RuntimeError("LibreHardwareMonitor is not exposing sensors")
-            self._lhm_conn = conn
-            return conn
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - wmi/pywin32 missing means no helper data
             self._lhm_failed_at = time.time()
             return None
+        for namespace, label in SENSOR_NAMESPACES:
+            try:
+                conn = wmi.WMI(namespace=namespace)
+                if not conn.Sensor():
+                    continue
+                self._lhm_conn = conn
+                self._sensor_source = label
+                return conn
+            except Exception:  # noqa: BLE001 - namespace absent or not permitted
+                continue
+        self._lhm_failed_at = time.time()
+        return None
 
     def libre_hardware_monitor(self) -> dict[str, float | None]:
         if time.time() - self._lhm_last_read < LHM_REFRESH_SECONDS:
@@ -144,9 +164,20 @@ class HardwareReader:
             "gpu_percent": gpu_load,
             "fan_percent": fan,
         }
+        if values["cpu_temp"] is not None:
+            self._cpu_temp_source = self._sensor_source
         self._lhm_values = values
         self._lhm_last_read = time.time()
         return dict(values)
+
+    # -- diagnostics ---------------------------------------------------
+    def describe(self) -> dict[str, object]:
+        """What the sensors can see right now, for the Troubleshooting panel."""
+        return {
+            "nvidia": self._nvml is not None,
+            "cpu_temp_source": self._cpu_temp_source,
+            "cpu_temp_hint": None if self._cpu_temp_source else CPU_TEMP_HINT,
+        }
 
     # -- combined ------------------------------------------------------
     def sample(self) -> dict[str, float | None]:

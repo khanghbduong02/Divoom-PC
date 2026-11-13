@@ -7,13 +7,14 @@ from datetime import datetime
 from PIL import ImageDraw
 
 from ..models import Layer
+from ..units import display_unit, is_temperature, to_display
 from . import font
 
 MISSING = "--"
 MAX_TEXT_SCALE = 8
 
 
-def format_value(value: float | None, layer: Layer) -> str:
+def format_value(value: float | None, layer: Layer, temperature_unit: str = "c") -> str:
     """Render a metric value, or a visible placeholder when it is unavailable."""
     if value is None:
         return MISSING
@@ -21,18 +22,20 @@ def format_value(value: float | None, layer: Layer) -> str:
         number = float(value)
     except (TypeError, ValueError):
         return MISSING
+    if is_temperature(layer.metric):
+        number = to_display(number, temperature_unit)
     decimals = max(0, min(3, int(layer.decimals)))
-    return f"{number:.{decimals}f}{layer.unit}"
+    return f"{number:.{decimals}f}{display_unit(layer, temperature_unit)}"
 
 
-def text_for(layer: Layer, value: float | None, now: datetime) -> str:
+def text_for(layer: Layer, value: float | None, now: datetime, temperature_unit: str = "c") -> str:
     if layer.kind == "text":
         if layer.source == "clock":
             return now.strftime("%H:%M")
         if layer.source == "date":
             return now.strftime("%a %d.%m")
         return layer.text
-    return format_value(value, layer)
+    return format_value(value, layer, temperature_unit)
 
 
 def _aligned_x(layer: Layer, text: str, scale: int) -> int:
@@ -49,8 +52,9 @@ def draw_number(
     layer: Layer,
     value: float | None,
     now: datetime,
+    temperature_unit: str = "c",
 ) -> None:
-    text = text_for(layer, value, now)
+    text = text_for(layer, value, now, temperature_unit)
     if not text:
         return
     preferred = MAX_TEXT_SCALE if layer.auto_scale else layer.scale
@@ -78,3 +82,75 @@ def draw_bar(draw: ImageDraw.ImageDraw, layer: Layer, value: float | None) -> No
         (box[0], box[1], box[0] + filled - 1, box[3]),
         fill=layer.color,
     )
+
+
+def draw_line(
+    draw: ImageDraw.ImageDraw,
+    layer: Layer,
+    samples: list[tuple[float, float | None]],
+    temperature_unit: str = "c",
+) -> None:
+    """History sparkline: past ``history_minutes`` of one metric.
+
+    ``samples`` arrive oldest-first as ``(timestamp, value)``; gaps (``None``)
+    break the line instead of being drawn as zero.
+    """
+    if layer.w <= 1 or layer.h <= 1:
+        return
+    left, top = layer.x, layer.y
+    right, bottom = layer.x + layer.w - 1, layer.y + layer.h - 1
+    box = (left, top, right, bottom)
+    draw.rectangle(box, fill=layer.track_color)
+
+    points: list[tuple[float, float]] = [
+        (stamp, float(value)) for stamp, value in samples if value is not None
+    ]
+    if not points:
+        return
+
+    low = float(layer.min_value)
+    high = float(layer.max_value)
+    if is_temperature(layer.metric):
+        low = to_display(low, temperature_unit)
+        high = to_display(high, temperature_unit)
+    if high <= low:
+        high = low + 1.0
+
+    first = samples[0][0]
+    last = samples[-1][0]
+    span = max(1e-6, last - first)
+    width = max(1, right - left)
+    height = max(1, bottom - top)
+
+    def px(stamp: float) -> int:
+        return left + min(width, max(0, round((stamp - first) / span * width)))
+
+    def py(raw: float) -> int:
+        shown = to_display(raw, temperature_unit) if is_temperature(layer.metric) else raw
+        ratio = max(0.0, min(1.0, (shown - low) / (high - low)))
+        return bottom - round(ratio * height)
+
+    segment: list[tuple[int, int]] = []
+    last_point: tuple[int, int] | None = None
+
+    def flush() -> None:
+        if len(segment) > 1:
+            draw.line(segment, fill=layer.color, width=1)
+
+    for stamp, value in samples:
+        if value is None:
+            flush()
+            segment = []
+            continue
+        point = (px(stamp), py(float(value)))
+        segment.append(point)
+        last_point = point
+    flush()
+
+    # mark the newest reading so a flat line still says where "now" is
+    if last_point is not None:
+        x, y = last_point
+        draw.rectangle(
+            (max(left, x - 1), max(top, y - 1), min(right, x + 1), min(bottom, y + 1)),
+            fill=layer.color,
+        )

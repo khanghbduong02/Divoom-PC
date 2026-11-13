@@ -118,3 +118,41 @@ def test_auto_scaled_label_respects_box_height() -> None:
     tall_rows = [y for y in range(128) if any(render_panel(panel(tall)).getpixel((x, y)) != (0, 0, 0) for x in range(128))]
     assert len(tall_rows) > len(short_rows)
     assert max(tall_rows) <= 56
+
+
+def test_line_widget_draws_history_within_its_window() -> None:
+    layer = Layer.metric_layer(
+        "cpu_percent", widget="line", x=0, y=0, w=64, h=32,
+        color="#00FF00", track_color="#111111", history_minutes=10,
+    )
+    panel = Panel(background=Background(color="#000000"), layers=[layer])
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    recent = [(now.timestamp() - 300 + i * 60, value) for i, value in enumerate([10, 40, 80, 20, 60])]
+    image = render_panel(panel, {"cpu_percent": 60}, now=now, history={"cpu_percent": recent})
+    palette = dict((color, count) for count, color in image.getcolors(maxcolors=1 << 20) or [])
+    assert palette.get((0, 255, 0), 0) > 10
+    assert image.getpixel((0, 0)) == (0x11, 0x11, 0x11)
+
+    # samples older than the window are ignored: just the empty track remains
+    old = [(now.timestamp() - 3600, 10), (now.timestamp() - 3500, 90)]
+    stale = render_panel(panel, {"cpu_percent": 60}, now=now, history={"cpu_percent": old})
+    stale_palette = dict((color, count) for count, color in stale.getcolors(maxcolors=1 << 20) or [])
+    assert stale_palette.get((0, 255, 0), 0) == 0
+
+
+def test_line_widget_skips_gaps_instead_of_drawing_zero() -> None:
+    layer = Layer.metric_layer("ram_percent", widget="line", x=0, y=0, w=64, h=32, color="#FF0000")
+    panel = Panel(background=Background(color="#000000"), layers=[layer])
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    samples = [(now.timestamp() - 120, 90), (now.timestamp() - 60, None), (now.timestamp(), 10)]
+    image = render_panel(panel, {}, now=now, history={"ram_percent": samples})
+    reds = sum(count for count, color in image.getcolors(maxcolors=1 << 20) or [] if color == (255, 0, 0))
+    assert 0 < reds < 80  # two dots, no line across the gap
+
+
+def test_fahrenheit_changes_a_temperature_layer() -> None:
+    layer = Layer.metric_layer("cpu_temp", x=0, y=0, w=128, h=40, scale=4, auto_scale=True)
+    panel = Panel(background=Background(color="#000000"), layers=[layer])
+    celsius = render_panel(panel, {"cpu_temp": 60}, temperature_unit="c")
+    fahrenheit = render_panel(panel, {"cpu_temp": 60}, temperature_unit="f")
+    assert celsius.tobytes() != fahrenheit.tobytes()

@@ -8,6 +8,7 @@ import contextlib
 import sys
 import time
 import uuid
+from typing import Literal
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -146,6 +147,7 @@ class SettingsPatch(BaseModel):
     allow_lan: bool | None = None
     auto_push: bool | None = None
     autostart: bool | None = None
+    temperature_unit: Literal["c", "f"] | None = None
 
 
 class AutostartRequest(BaseModel):
@@ -155,6 +157,26 @@ class AutostartRequest(BaseModel):
 # -- helpers -----------------------------------------------------------
 def _error_response(exc: DeviceError, status: int = 502) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": exc.as_dict()})
+
+
+def _render_theme(state: AppState, theme: Theme) -> list:
+    """Render every panel, giving line layers only the history they ask for."""
+    windows: dict[str, int] = {}
+    for panel in theme.panels:
+        for layer in panel.layers:
+            if layer.kind == "metric" and layer.visible and layer.widget == "line":
+                windows[layer.metric] = max(windows.get(layer.metric, 0), layer.history_minutes)
+    history: dict[str, list[tuple[float, float | None]]] = {}
+    if windows:
+        full = state.collector.history_window(max(windows.values()) * 60)
+        history = {metric: full[metric] for metric in windows if metric in full}
+    return render_all(
+        theme,
+        state.collector.snapshot(),
+        state.store.media_dir,
+        history=history,
+        temperature_unit=state.config.settings.temperature_unit,
+    )
 
 
 def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[str, object]]:
@@ -198,8 +220,7 @@ def _push_loop(state: AppState) -> None:
         try:
             with state.frame_lock:
                 transport = state.transport()
-                values = state.collector.snapshot()
-                images = render_all(state.config.theme, values, state.store.media_dir)
+                images = _render_theme(state, state.config.theme)
                 if now - last_full > 60:
                     state.last_frames.clear()
                     last_full = now
@@ -301,6 +322,8 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
         if patch.allow_lan is not None and patch.allow_lan != settings.allow_lan:
             settings.allow_lan = patch.allow_lan
             restart_required = True
+        if patch.temperature_unit is not None:
+            settings.temperature_unit = patch.temperature_unit
         if patch.autostart is not None and patch.autostart != settings.autostart:
             settings.autostart = patch.autostart
             set_autostart(patch.autostart)
@@ -460,12 +483,15 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
     # -- sensors / push ------------------------------------------------
     @app.get("/api/sensors")
     def sensors() -> dict[str, object]:
-        return {"values": state.collector.snapshot(), "history": state.collector.history()}
+        return {
+            "values": state.collector.snapshot(),
+            "history": state.collector.history(),
+            "hardware": state.collector.hardware(),
+        }
 
     @app.post("/api/send")
     def send(body: SendRequest | None = None) -> dict[str, object]:
-        values = state.collector.snapshot()
-        images = render_all(state.config.theme, values, store.media_dir)
+        images = _render_theme(state, state.config.theme)
         panels = body.panels if body else None
         try:
             results = _push(state, panels, images)
@@ -486,6 +512,8 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             "auto_push": state.config.settings.auto_push,
             "last_push_at": state.last_push_at,
             "skipped_frames": state.skipped_frames,
+            "hardware": state.collector.hardware(),
+            "temperature_unit": state.config.settings.temperature_unit,
         }
 
     # -- live preview --------------------------------------------------
@@ -512,7 +540,7 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             while True:
                 theme = draft.get("theme") or state.config.theme
                 values = state.collector.snapshot()
-                images = render_all(theme, values, store.media_dir)
+                images = _render_theme(state, theme)
                 await websocket.send_json(
                     {
                         "type": "tick",

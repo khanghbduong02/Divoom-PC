@@ -61,7 +61,10 @@ class Layer(BaseModel):
 
     # metric layers
     metric: str = "cpu_percent"
-    widget: Literal["number", "bar"] = "number"
+    #: number = value right now, bar = current value as a gauge,
+    #: line = history over ``history_minutes``
+    widget: Literal["number", "bar", "line"] = "number"
+    history_minutes: int = 10
 
     # text layers
     text: str = ""
@@ -112,6 +115,11 @@ class Layer(BaseModel):
     def _validate_scale(cls, value: int) -> int:
         return max(1, min(8, value))
 
+    @field_validator("history_minutes")
+    @classmethod
+    def _validate_history(cls, value: int) -> int:
+        return max(1, min(180, value))
+
     @classmethod
     def metric_layer(cls, metric: str, **overrides: object) -> "Layer":
         defaults = METRIC_DEFAULTS.get(metric, {})
@@ -119,6 +127,7 @@ class Layer(BaseModel):
             "kind": "metric",
             "metric": metric,
             "widget": "number",
+            "history_minutes": 10,
             "unit": defaults.get("unit", ""),
             "min_value": defaults.get("min", 0),
             "max_value": defaults.get("max", 100),
@@ -204,6 +213,8 @@ class AppSettings(BaseModel):
     push_interval: float = 2.0
     allow_lan: bool = False
     autostart: bool = True
+    #: how temperature readings are shown on the panels
+    temperature_unit: Literal["c", "f"] = "c"
 
     @field_validator("refresh_interval")
     @classmethod

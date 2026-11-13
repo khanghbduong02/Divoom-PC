@@ -26,6 +26,8 @@ METRIC_KEYS: tuple[str, ...] = (
 )
 
 HISTORY_LENGTH = 60
+#: line-graph layers can look back up to three hours
+HISTORY_SECONDS = 3 * 3600
 
 
 def _disk_path() -> str:
@@ -37,11 +39,22 @@ def _disk_path() -> str:
 class SensorCollector:
     """Samples on its own thread so a slow WMI query never stalls a request."""
 
-    def __init__(self, interval: float = 1.0, history: int = HISTORY_LENGTH) -> None:
+    def __init__(
+        self,
+        interval: float = 1.0,
+        history_seconds: float = HISTORY_SECONDS,
+        history: int | None = None,
+    ) -> None:
         self.interval = max(0.2, interval)
+        if history is not None:  # explicit sample count (tests / embedders)
+            self._history_seconds = max(1.0, history * self.interval)
+            length = history
+        else:
+            self._history_seconds = max(60.0, history_seconds)
+            length = max(60, int(self._history_seconds / self.interval) + 5)
         self._values: dict[str, float | None] = {key: None for key in METRIC_KEYS}
-        self._history: dict[str, deque[float | None]] = {
-            key: deque(maxlen=history) for key in METRIC_KEYS
+        self._history: dict[str, deque[tuple[float, float | None]]] = {
+            key: deque(maxlen=length) for key in METRIC_KEYS
         }
         self._lock = Lock()
         self._stop = Event()
@@ -105,10 +118,11 @@ class SensorCollector:
             if key in values and value is not None:
                 values[key] = round(float(value), 1)
 
+        sampled_at = time.time()
         with self._lock:
             self._values = values
             for key, value in values.items():
-                self._history[key].append(value)
+                self._history[key].append((sampled_at, value))
 
     # -- readers -------------------------------------------------------
     def snapshot(self) -> dict[str, float | None]:
@@ -116,8 +130,26 @@ class SensorCollector:
             return dict(self._values)
 
     def history(self) -> dict[str, list[float | None]]:
+        """Values only, oldest first (kept for the sensor endpoint and tests)."""
         with self._lock:
-            return {key: list(samples) for key, samples in self._history.items()}
+            return {key: [value for _, value in samples] for key, samples in self._history.items()}
+
+    def history_window(
+        self, seconds: float, now: float | None = None
+    ) -> dict[str, list[tuple[float, float | None]]]:
+        """Timestamped samples from the last ``seconds`` seconds."""
+        cutoff = (time.time() if now is None else now) - max(1.0, seconds)
+        with self._lock:
+            return {
+                key: [(stamp, value) for stamp, value in samples if stamp >= cutoff]
+                for key, samples in self._history.items()
+            }
+
+    def hardware(self) -> dict[str, object]:
+        try:
+            return self._hardware.describe()
+        except Exception:  # noqa: BLE001 - diagnostics must never fail
+            return {"cpu_temp_source": None, "cpu_temp_hint": "Sensor sources unavailable."}
 
     def wait_for_first_sample(self, timeout: float = 2.0) -> None:
         deadline = time.monotonic() + timeout

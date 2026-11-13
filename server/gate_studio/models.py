@@ -75,6 +75,9 @@ class Layer(BaseModel):
     color: str = "#FFFFFF"
     track_color: str = "#2A2A2A"
     scale: int = 2
+    #: when true the text grows/shrinks to fill the layer box, so dragging the
+    #: box corner scales the content instead of needing a separate size value
+    auto_scale: bool = False
     decimals: int = 0
     unit: str = ""
     min_value: float = 0

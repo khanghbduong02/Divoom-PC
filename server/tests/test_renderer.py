@@ -93,3 +93,28 @@ def test_encoders() -> None:
     assert encode_png(image).startswith(b"\x89PNG")
     assert encode_jpeg(image).startswith(b"\xff\xd8")
     assert len(encode_jpeg(image)) < 12_000
+
+
+def test_auto_scaled_text_grows_to_fill_its_box() -> None:
+    auto = Layer.metric_layer("cpu_percent", x=0, y=0, w=124, h=60, scale=1, auto_scale=True)
+    fixed = Layer.metric_layer("cpu_percent", x=0, y=0, w=124, h=60, scale=1)
+    auto_image = render_panel(Panel(background=Background(color="#000000"), layers=[auto]), {"cpu_percent": 88})
+    fixed_image = render_panel(Panel(background=Background(color="#000000"), layers=[fixed]), {"cpu_percent": 88})
+
+    def white_pixels(image: Image.Image) -> int:
+        palette = dict((color, count) for count, color in image.getcolors(maxcolors=1 << 20) or [])
+        return palette.get((255, 255, 255), 0)
+
+    assert white_pixels(auto_image) > white_pixels(fixed_image) * 3
+    # the glyphs still stay inside the layer box
+    assert auto_image.getpixel((0, 127)) == (0, 0, 0)
+
+
+def test_auto_scaled_label_respects_box_height() -> None:
+    short = Layer(kind="text", source="static", text="GPU", x=0, y=0, w=124, h=14, auto_scale=True)
+    tall = Layer(kind="text", source="static", text="GPU", x=0, y=0, w=124, h=56, auto_scale=True)
+    panel = lambda layer: Panel(background=Background(color="#000000"), layers=[layer])
+    short_rows = [y for y in range(128) if any(render_panel(panel(short)).getpixel((x, y)) != (0, 0, 0) for x in range(128))]
+    tall_rows = [y for y in range(128) if any(render_panel(panel(tall)).getpixel((x, y)) != (0, 0, 0) for x in range(128))]
+    assert len(tall_rows) > len(short_rows)
+    assert max(tall_rows) <= 56

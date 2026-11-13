@@ -148,3 +148,28 @@ def test_config_file_is_written(client: TestClient, store: ConfigStore) -> None:
     client.put("/api/config/settings", json={"refresh_interval": 1.2})
     payload = json.loads(store.config_path.read_text(encoding="utf-8"))
     assert payload["settings"]["refresh_interval"] == 1.2
+
+
+def test_preset_can_apply_to_a_single_panel(client: TestClient) -> None:
+    before = client.get("/api/theme").json()["theme"]
+    response = client.post("/api/presets/retro-terminal/apply", json={"panel": 2})
+    assert response.status_code == 200
+    after = response.json()["theme"]
+
+    assert after["panels"][2]["background"]["color"] == "#0A0800"
+    assert after["panels"][0] == before["panels"][0]
+    assert after["panels"][4] == before["panels"][4]
+    # the theme is no longer the preset it borrowed from
+    assert not after["id"].startswith("preset-")
+
+
+def test_single_panel_preset_validates_index(client: TestClient) -> None:
+    assert client.post("/api/presets/minimal-mono/apply", json={"panel": 9}).status_code == 422
+
+
+def test_auto_scale_survives_a_theme_round_trip(client: TestClient) -> None:
+    theme = client.get("/api/theme").json()["theme"]
+    layer = Layer.metric_layer("ram_percent", auto_scale=True, scale=8).model_dump(mode="json")
+    theme["panels"][0]["layers"] = [layer]
+    stored = client.put("/api/theme", json=theme).json()["theme"]
+    assert stored["panels"][0]["layers"][0]["auto_scale"] is True

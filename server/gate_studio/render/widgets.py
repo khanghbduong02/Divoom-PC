@@ -10,6 +10,7 @@ from ..models import Layer
 from . import font
 
 MISSING = "--"
+MAX_TEXT_SCALE = 8
 
 
 def format_value(value: float | None, layer: Layer) -> str:
@@ -52,7 +53,8 @@ def draw_number(
     text = text_for(layer, value, now)
     if not text:
         return
-    scale = font.fit_scale(text, layer.w, layer.scale, layer.h)
+    preferred = MAX_TEXT_SCALE if layer.auto_scale else layer.scale
+    scale = font.fit_scale(text, layer.w, max(1, preferred), layer.h)
     x = _aligned_x(layer, text, scale)
     y = layer.y + max(0, (layer.h - font.text_height(scale)) // 2)
     font.draw_text(draw, (x, y), text, scale, layer.color)

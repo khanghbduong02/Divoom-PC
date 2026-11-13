@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
@@ -106,6 +107,11 @@ class SendRequest(BaseModel):
 
 class TestFrameRequest(BaseModel):
     panel: int = 0
+
+
+class ApplyPresetRequest(BaseModel):
+    #: when set, only this panel is replaced instead of the whole theme
+    panel: int | None = None
 
 
 class SettingsPatch(BaseModel):
@@ -296,12 +302,23 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
         return {"presets": list_presets()}
 
     @app.post("/api/presets/{preset_id}/apply")
-    def apply_preset(preset_id: str) -> dict[str, object]:
+    def apply_preset(preset_id: str, body: ApplyPresetRequest | None = None) -> dict[str, object]:
         try:
-            theme = load_preset(preset_id)
+            preset = load_preset(preset_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        state.config.theme = _theme_with_media(theme, store)
+
+        if body is not None and body.panel is not None:
+            if not 0 <= body.panel <= 4:
+                raise HTTPException(status_code=422, detail="panel must be 0..4")
+            panels = list(state.config.theme.panels)
+            panels[body.panel] = preset.panels[body.panel]
+            merged = state.config.theme.model_copy(
+                update={"panels": panels, "id": uuid.uuid4().hex[:12]}
+            )
+            state.config.theme = _theme_with_media(merged, store)
+        else:
+            state.config.theme = _theme_with_media(preset, store)
         state.save()
         return {"theme": state.config.theme.model_dump(mode="json")}
 

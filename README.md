@@ -180,14 +180,17 @@ fresh machine shows a SmartScreen prompt.
   and numbers fill their box unless you untick **Scale text to fit the box**.
 - **Layers** — any number per panel; everything may live on one panel. Pick a metric
   from the list and press **Add metric**, or **Add text** for a label, clock or date.
-  Reorder, hide or delete from the list.
+  Reorder, hide or delete from the list. Each metric can be shown as the **value right
+  now**, a **progress bar**, or a **line graph** of the past 5 minutes to 3 hours
+  (history builds while the app runs).
 - **Inspector** — per panel: background colour or image (fit / crop / stretch, dim),
   accent colour, **Theme for this panel only**, **Remove all layers from this panel**.
   Per layer: metric, widget (big number or bar), position, size, colour, text sizing,
   decimals, unit, gauge min/max, alignment.
 - **Toolbar** — choose a theme and press **All panels**; **Send** forces an immediate
-  update; **Help** has the end-user guide; **Settings** controls updates, autostart and
-  network access; **Troubleshooting** shows the last device reply verbatim.
+  update; **Help** has the end-user guide; **Settings** controls updates, autostart,
+  network access and whether temperatures read **°C or °F** (all panels);
+  **Troubleshooting** shows the last device reply verbatim.
 
 Edits autosave to `config.json`. The update loop re-renders every 2 s (configurable),
 sends only panels whose pixels changed, retries after the display reboots, and clears
@@ -201,10 +204,17 @@ its cache once a minute so a display that was power-cycled still gets a fresh fr
 | GPU % / temp / VRAM / fan | NVML (`nvidia-ml-py`), NVIDIA only |
 | CPU temp, AMD/Intel GPU temp | LibreHardwareMonitor's WMI namespace, if it is running |
 
-Metrics the machine cannot supply render as `--`, never as a wrong number. CPU
-temperature needs LibreHardwareMonitor running with enough privilege to expose
-`root/LibreHardwareMonitor`; without it you get `--` and everything else keeps working.
+Metrics the machine cannot supply render as `--`, never as a wrong number. Windows has
+no unprivileged CPU-temperature API, so CPU temperature needs **LibreHardwareMonitor**
+(or OpenHardwareMonitor) running as administrator: the agent reads its
+`root/LibreHardwareMonitor` WMI namespace and picks the reading up within 30 seconds.
+Without it everything else keeps working, and Troubleshooting explains the missing
+reading with a download link. GPU temperatures come from NVML and need no helper.
 Nothing asks for elevation.
+
+Temperatures are stored in Celsius and drawn in the unit chosen in Settings. A line
+graph follows one metric over the selected window (5 min–3 h), keeps gaps where a
+reading was unavailable, and marks the newest sample.
 
 ## Phone access
 
@@ -277,6 +287,10 @@ The three failure modes are reported separately, because each has a different fi
 | `refused` | Host reachable, port closed | Try the other port (80 = HW 400, 9000 = HW 402) |
 | `timeout` | No reply | Wrong IP, other network, device asleep, or it never got internet after boot |
 | `token` | Device answered, rejected the call | Add/correct the LocalToken |
+
+A CPU temperature stuck at `--` is not a display problem: install LibreHardwareMonitor,
+run it as administrator and leave it running. Troubleshooting shows whether a sensor
+source was found.
 
 Whatever the device replied is shown verbatim in the wizard and in **Troubleshooting**.
 

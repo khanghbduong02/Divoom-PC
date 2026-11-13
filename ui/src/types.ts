@@ -96,8 +96,22 @@ export interface DeviceSummary {
 
 export interface Settings {
   refresh_interval: number;
+  push_interval: number;
   allow_lan: boolean;
   auto_push: boolean;
+  autostart: boolean;
+}
+
+export interface SystemInfo {
+  version: string;
+  autostart: boolean;
+  autostart_supported: boolean;
+  frozen: boolean;
+  data_dir: string;
+  auto_push: boolean;
+  push_interval: number;
+  last_push_at: number | null;
+  skipped_frames: number;
 }
 
 export interface PresetMeta {

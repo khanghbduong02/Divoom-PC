@@ -5,6 +5,7 @@ import type {
   SendResult,
   SensorValues,
   Settings,
+  SystemInfo,
   Theme,
 } from "./types";
 
@@ -91,9 +92,15 @@ export const api = {
       "/api/config",
     ),
   putSettings: (patch: Partial<Settings>) =>
-    request<{ settings: Settings; restart_required: boolean }>("/api/config/settings", {
-      method: "PUT",
-      body: JSON.stringify(patch),
+    request<{ settings: Settings; restart_required: boolean; autostart?: boolean }>(
+      "/api/config/settings",
+      { method: "PUT", body: JSON.stringify(patch) },
+    ),
+  getSystem: () => request<SystemInfo>("/api/system"),
+  setAutostart: (enabled: boolean) =>
+    request<{ autostart: boolean; supported: boolean }>("/api/system/autostart", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
     }),
   probe: (host: string, localToken: number | null) =>
     request<{ outcomes: ProbeOutcome[] }>("/api/device/probe", {
@@ -137,6 +144,9 @@ export const api = {
       last_error: { kind: string; message: string; raw: string | null; hint: string | null } | null;
       sensors: SensorValues;
       data_dir: string;
+      auto_push: boolean;
+      last_push_at: number | null;
+      skipped_frames: number;
     }>("/api/diagnostics"),
   uploadMedia: async (file: File) => {
     const form = new FormData();

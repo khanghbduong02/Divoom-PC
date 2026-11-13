@@ -2,7 +2,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { Layer, Panel } from "../types";
 import { PANEL_SIZE } from "../types";
 
-const SCALE = 4;
+const DEFAULT_SCALE = 4;
 const MIN_SIZE = 2;
 const MAX_SIZE = PANEL_SIZE * 2;
 
@@ -19,6 +19,7 @@ interface Props {
   panel: Panel;
   preview: string | undefined;
   selectedLayerId: string | null;
+  scale?: number;
   onSelect: (layerId: string | null) => void;
   onLayerChange: (layer: Layer) => void;
 }
@@ -31,7 +32,14 @@ function clampSize(value: number): number {
   return Math.max(MIN_SIZE, Math.min(MAX_SIZE, Math.round(value)));
 }
 
-export default function Stage({ panel, preview, selectedLayerId, onSelect, onLayerChange }: Props) {
+export default function Stage({
+  panel,
+  preview,
+  selectedLayerId,
+  scale = DEFAULT_SCALE,
+  onSelect,
+  onLayerChange,
+}: Props) {
   const selected = panel.layers.find((layer) => layer.id === selectedLayerId) ?? null;
 
   const startMove = (event: ReactPointerEvent<HTMLDivElement>, layer: Layer) => {
@@ -41,8 +49,8 @@ export default function Stage({ panel, preview, selectedLayerId, onSelect, onLay
     const origin = { x: event.clientX, y: event.clientY, layerX: layer.x, layerY: layer.y };
 
     const move = (moveEvent: PointerEvent) => {
-      const dx = Math.round((moveEvent.clientX - origin.x) / SCALE);
-      const dy = Math.round((moveEvent.clientY - origin.y) / SCALE);
+      const dx = Math.round((moveEvent.clientX - origin.x) / scale);
+      const dy = Math.round((moveEvent.clientY - origin.y) / scale);
       onLayerChange({
         ...layer,
         x: clampPosition(origin.layerX + dx),
@@ -75,8 +83,8 @@ export default function Stage({ panel, preview, selectedLayerId, onSelect, onLay
     };
 
     const move = (moveEvent: PointerEvent) => {
-      const dx = Math.round((moveEvent.clientX - origin.x) / SCALE);
-      const dy = Math.round((moveEvent.clientY - origin.y) / SCALE);
+      const dx = Math.round((moveEvent.clientX - origin.x) / scale);
+      const dy = Math.round((moveEvent.clientY - origin.y) / scale);
 
       let left = origin.left;
       let top = origin.top;
@@ -108,7 +116,7 @@ export default function Stage({ panel, preview, selectedLayerId, onSelect, onLay
     <div className="canvas-area">
       <div
         className="canvas"
-        style={{ width: PANEL_SIZE * SCALE, height: PANEL_SIZE * SCALE }}
+        style={{ width: PANEL_SIZE * scale, height: PANEL_SIZE * scale }}
         onPointerDown={() => onSelect(null)}
       >
         {preview ? (
@@ -124,10 +132,10 @@ export default function Stage({ panel, preview, selectedLayerId, onSelect, onLay
               key={layer.id}
               className={`layer-box ${isSelected ? "is-selected" : ""} ${layer.visible ? "" : "is-hidden"}`}
               style={{
-                left: layer.x * SCALE,
-                top: layer.y * SCALE,
-                width: layer.w * SCALE,
-                height: layer.h * SCALE,
+                left: layer.x * scale,
+                top: layer.y * scale,
+                width: layer.w * scale,
+                height: layer.h * scale,
               }}
               onPointerDown={(event) => startMove(event, layer)}
             >

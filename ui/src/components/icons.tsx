@@ -74,10 +74,37 @@ export function TrashIcon({ size }: IconProps) {
   );
 }
 
-export function PlusIcon({ size }: IconProps) {
+export function GripIcon({ size }: IconProps) {
   return (
     <Frame size={size}>
-      <path {...STROKE} d="M8 3.25v9.5M3.25 8h9.5" />
+      <g fill="currentColor">
+        {[5, 8, 11].map((y) =>
+          [6, 10].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.05" />),
+        )}
+      </g>
+    </Frame>
+  );
+}
+
+export function HelpIcon({ size }: IconProps) {
+  return (
+    <Frame size={size}>
+      <g {...STROKE}>
+        <circle cx="8" cy="8" r="6.25" />
+        <path d="M6.3 6.1a1.8 1.8 0 0 1 3.5.5c0 1.2-1.8 1.4-1.8 2.6" />
+        <path d="M8 11.9v.05" />
+      </g>
+    </Frame>
+  );
+}
+
+export function GearIcon({ size }: IconProps) {
+  return (
+    <Frame size={size}>
+      <g {...STROKE}>
+        <circle cx="8" cy="8" r="2.1" />
+        <path d="M8 1.9v1.6M8 12.5v1.6M2 8h1.6M12.4 8H14M3.7 3.7l1.1 1.1M11.2 11.2l1.1 1.1M12.3 3.7l-1.1 1.1M4.8 11.2l-1.1 1.1" />
+      </g>
     </Frame>
   );
 }

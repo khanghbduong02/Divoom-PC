@@ -1,5 +1,6 @@
-import type { Layer } from "../types";
-import { metricMeta } from "../types";
+import { useState } from "react";
+import type { Layer, MetricKey } from "../types";
+import { METRICS, metricMeta } from "../types";
 import { ChevronIcon, EyeIcon, TrashIcon } from "./icons";
 
 interface Props {
@@ -9,7 +10,7 @@ interface Props {
   onToggle: (layer: Layer) => void;
   onDelete: (layerId: string) => void;
   onMove: (layerId: string, direction: -1 | 1) => void;
-  onAddMetric: () => void;
+  onAddMetric: (metric: MetricKey) => void;
   onAddText: () => void;
 }
 
@@ -40,6 +41,8 @@ export default function LayerList({
   onAddMetric,
   onAddText,
 }: Props) {
+  const [metric, setMetric] = useState<MetricKey>("cpu_percent");
+
   return (
     <section className="layer-section">
       <div className="section-header">
@@ -47,14 +50,26 @@ export default function LayerList({
         <span className="layer-count">{layers.length}</span>
       </div>
 
-      <div className="add-buttons">
-        <button type="button" className="button-small" onClick={onAddMetric}>
+      <div className="add-row">
+        <select
+          className="add-metric"
+          aria-label="Metric to add"
+          value={metric}
+          onChange={(event) => setMetric(event.target.value as MetricKey)}
+        >
+          {METRICS.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="button-small" onClick={() => onAddMetric(metric)}>
           Add metric
         </button>
-        <button type="button" className="button-small" onClick={onAddText}>
-          Add text
-        </button>
       </div>
+      <button type="button" className="button-small add-text" onClick={onAddText}>
+        Add text
+      </button>
 
       {layers.length === 0 ? (
         <p className="empty-hint">

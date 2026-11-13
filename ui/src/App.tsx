@@ -10,7 +10,7 @@ import type {
   Theme,
   WireStatus,
 } from "./types";
-import { METRICS, metricMeta } from "./types";
+import { METRICS, PANEL_SIZE, metricMeta } from "./types";
 import Toolbar from "./components/Toolbar";
 import PanelRail from "./components/PanelRail";
 import Stage from "./components/Stage";
@@ -18,6 +18,8 @@ import LayerList from "./components/LayerList";
 import Inspector from "./components/Inspector";
 import DeviceWizard from "./components/DeviceWizard";
 import Diagnostics from "./components/Diagnostics";
+import Settings from "./components/Settings";
+import Help from "./components/Help";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -104,11 +106,48 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [stageScale, setStageScale] = useState(4);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const skipFirstSave = useRef(true);
+  const editorRef = useRef<HTMLElement | null>(null);
+
+  // the tray menu can deep-link to settings
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("settings")) {
+      setSettingsOpen(true);
+      url.searchParams.delete("settings");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
+  // scale the 128px canvas to whatever room the middle column has;
+  // re-run once the editor replaces the loading screen
+  const hasTheme = theme !== null;
+  useEffect(() => {
+    if (!hasTheme) return;
+    const element = editorRef.current;
+    if (!element) return;
+    const measure = () => {
+      const padding = 40;
+      const available = element.clientWidth - padding;
+      const raw = Math.min(4.5, Math.max(2.25, available / PANEL_SIZE));
+      setStageScale(Math.max(2.25, Math.floor(raw * 4) / 4));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [hasTheme]);
 
   const loadConfig = useCallback(async () => {
     const config = await api.getConfig();
@@ -363,7 +402,6 @@ export default function App() {
   return (
     <div className="app">
       <Toolbar
-        theme={theme}
         presets={presets}
         device={device}
         wire={wire}
@@ -373,6 +411,8 @@ export default function App() {
         onSend={() => void send()}
         onWizard={() => setWizardOpen(true)}
         onDiagnostics={() => setDiagnosticsOpen(true)}
+        onSettings={() => setSettingsOpen(true)}
+        onHelp={() => setHelpOpen(true)}
       />
 
       <div className="workspace">
@@ -394,16 +434,17 @@ export default function App() {
             onToggle={(layer) => updateLayer(layer.id, { visible: !layer.visible })}
             onDelete={deleteLayer}
             onMove={moveLayer}
-            onAddMetric={() => addLayer(makeMetricLayer("cpu_percent", panel.layers.length))}
+            onAddMetric={(metric) => addLayer(makeMetricLayer(metric, panel.layers.length))}
             onAddText={() => addLayer(makeTextLayer(panel.layers.length))}
           />
         </aside>
 
-        <main className="editor">
+        <main className="editor" ref={editorRef}>
           <Stage
             panel={panel}
             preview={previews[selectedPanel]}
             selectedLayerId={selectedLayerId}
+            scale={stageScale}
             onSelect={setSelectedLayerId}
             onLayerChange={(layer) =>
               updateLayer(layer.id, { x: layer.x, y: layer.y, w: layer.w, h: layer.h })
@@ -496,6 +537,8 @@ export default function App() {
         onChanged={() => void loadConfig()}
       />
       <Diagnostics open={diagnosticsOpen} onClose={() => setDiagnosticsOpen(false)} />
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Help open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

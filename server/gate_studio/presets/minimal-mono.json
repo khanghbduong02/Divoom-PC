@@ -1,0 +1,151 @@
+{
+  "name": "Minimal Mono",
+  "description": "White on black. One number per panel, no labels, no chrome.",
+  "panels": [
+    {
+      "background": {
+        "kind": "color",
+        "color": "#000000",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFFFFF",
+      "layers": [
+        {
+          "kind": "metric",
+          "metric": "cpu_percent",
+          "widget": "number",
+          "x": 2,
+          "y": 24,
+          "w": 124,
+          "h": 76,
+          "scale": 8,
+          "color": "#FFFFFF",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#000000",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFFFFF",
+      "layers": [
+        {
+          "kind": "metric",
+          "metric": "gpu_percent",
+          "widget": "number",
+          "x": 2,
+          "y": 24,
+          "w": 124,
+          "h": 76,
+          "scale": 8,
+          "color": "#FFFFFF",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#000000",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFFFFF",
+      "layers": [
+        {
+          "kind": "metric",
+          "metric": "ram_percent",
+          "widget": "number",
+          "x": 2,
+          "y": 24,
+          "w": 124,
+          "h": 76,
+          "scale": 8,
+          "color": "#FFFFFF",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#000000",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFFFFF",
+      "layers": [
+        {
+          "kind": "metric",
+          "metric": "cpu_temp",
+          "widget": "number",
+          "x": 2,
+          "y": 24,
+          "w": 124,
+          "h": 76,
+          "scale": 8,
+          "color": "#FFFFFF",
+          "unit": "\u00b0",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#000000",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFFFFF",
+      "layers": [
+        {
+          "kind": "metric",
+          "metric": "gpu_temp",
+          "widget": "number",
+          "x": 2,
+          "y": 24,
+          "w": 124,
+          "h": 76,
+          "scale": 8,
+          "color": "#FFFFFF",
+          "unit": "\u00b0",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        }
+      ]
+    }
+  ]
+}

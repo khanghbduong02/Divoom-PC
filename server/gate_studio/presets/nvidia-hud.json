@@ -1,0 +1,356 @@
+{
+  "name": "NVIDIA HUD",
+  "description": "Near-black panel, green accents, oversized temperatures and a slim load bar.",
+  "panels": [
+    {
+      "background": {
+        "kind": "color",
+        "color": "#050505",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#76B900",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "GPU",
+          "x": 6,
+          "y": 8,
+          "w": 116,
+          "h": 12,
+          "scale": 2,
+          "color": "#76B900",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "gpu_percent",
+          "widget": "number",
+          "x": 4,
+          "y": 24,
+          "w": 120,
+          "h": 56,
+          "scale": 8,
+          "color": "#EAFFEA",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "gpu_percent",
+          "widget": "bar",
+          "x": 6,
+          "y": 96,
+          "w": 116,
+          "h": 6,
+          "scale": 1,
+          "color": "#76B900",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#16240A",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "NVIDIA HUD",
+          "x": 6,
+          "y": 112,
+          "w": 116,
+          "h": 10,
+          "scale": 1,
+          "color": "#3C5A14",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#050505",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#76B900",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "GPU TEMP",
+          "x": 6,
+          "y": 8,
+          "w": 116,
+          "h": 12,
+          "scale": 2,
+          "color": "#76B900",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "gpu_temp",
+          "widget": "number",
+          "x": 4,
+          "y": 24,
+          "w": 120,
+          "h": 56,
+          "scale": 8,
+          "color": "#EAFFEA",
+          "unit": "\u00b0C",
+          "min_value": 20,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "gpu_temp",
+          "widget": "bar",
+          "x": 6,
+          "y": 96,
+          "w": 116,
+          "h": 6,
+          "scale": 1,
+          "color": "#76B900",
+          "unit": "\u00b0C",
+          "min_value": 20,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#16240A",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "NVIDIA HUD",
+          "x": 6,
+          "y": 112,
+          "w": 116,
+          "h": 10,
+          "scale": 1,
+          "color": "#3C5A14",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#050505",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#76B900",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "CPU",
+          "x": 6,
+          "y": 8,
+          "w": 116,
+          "h": 12,
+          "scale": 2,
+          "color": "#76B900",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_percent",
+          "widget": "number",
+          "x": 4,
+          "y": 24,
+          "w": 120,
+          "h": 56,
+          "scale": 8,
+          "color": "#EAFFEA",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_percent",
+          "widget": "bar",
+          "x": 6,
+          "y": 96,
+          "w": 116,
+          "h": 6,
+          "scale": 1,
+          "color": "#76B900",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#16240A",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "NVIDIA HUD",
+          "x": 6,
+          "y": 112,
+          "w": 116,
+          "h": 10,
+          "scale": 1,
+          "color": "#3C5A14",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#050505",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#76B900",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "CPU TEMP",
+          "x": 6,
+          "y": 8,
+          "w": 116,
+          "h": 12,
+          "scale": 2,
+          "color": "#76B900",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_temp",
+          "widget": "number",
+          "x": 4,
+          "y": 24,
+          "w": 120,
+          "h": 56,
+          "scale": 8,
+          "color": "#EAFFEA",
+          "unit": "\u00b0C",
+          "min_value": 20,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_temp",
+          "widget": "bar",
+          "x": 6,
+          "y": 96,
+          "w": 116,
+          "h": 6,
+          "scale": 1,
+          "color": "#76B900",
+          "unit": "\u00b0C",
+          "min_value": 20,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#16240A",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "NVIDIA HUD",
+          "x": 6,
+          "y": 112,
+          "w": 116,
+          "h": 10,
+          "scale": 1,
+          "color": "#3C5A14",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#050505",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#76B900",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "RAM",
+          "x": 6,
+          "y": 8,
+          "w": 116,
+          "h": 12,
+          "scale": 2,
+          "color": "#76B900",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "ram_percent",
+          "widget": "number",
+          "x": 4,
+          "y": 24,
+          "w": 120,
+          "h": 56,
+          "scale": 8,
+          "color": "#EAFFEA",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "ram_percent",
+          "widget": "bar",
+          "x": 6,
+          "y": 96,
+          "w": 116,
+          "h": 6,
+          "scale": 1,
+          "color": "#76B900",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#16240A",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "NVIDIA HUD",
+          "x": 6,
+          "y": 112,
+          "w": 116,
+          "h": 10,
+          "scale": 1,
+          "color": "#3C5A14",
+          "align": "left"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,416 @@
+{
+  "name": "Retro Terminal",
+  "description": "Amber monospace on black with boxed readouts, like an old serial console.",
+  "panels": [
+    {
+      "background": {
+        "kind": "color",
+        "color": "#0A0800",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFB000",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 6,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "CPU LOAD",
+          "x": 8,
+          "y": 20,
+          "w": 112,
+          "h": 12,
+          "scale": 2,
+          "color": "#FFD479",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_percent",
+          "widget": "number",
+          "x": 8,
+          "y": 38,
+          "w": 112,
+          "h": 48,
+          "scale": 6,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_percent",
+          "widget": "bar",
+          "x": 8,
+          "y": 96,
+          "w": 112,
+          "h": 4,
+          "scale": 1,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#332200",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 108,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#0A0800",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFB000",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 6,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "GPU LOAD",
+          "x": 8,
+          "y": 20,
+          "w": 112,
+          "h": 12,
+          "scale": 2,
+          "color": "#FFD479",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "gpu_percent",
+          "widget": "number",
+          "x": 8,
+          "y": 38,
+          "w": 112,
+          "h": 48,
+          "scale": 6,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "gpu_percent",
+          "widget": "bar",
+          "x": 8,
+          "y": 96,
+          "w": 112,
+          "h": 4,
+          "scale": 1,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#332200",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 108,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#0A0800",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFB000",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 6,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "CPU TEMP",
+          "x": 8,
+          "y": 20,
+          "w": 112,
+          "h": 12,
+          "scale": 2,
+          "color": "#FFD479",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_temp",
+          "widget": "number",
+          "x": 8,
+          "y": 38,
+          "w": 112,
+          "h": 48,
+          "scale": 6,
+          "color": "#FFB000",
+          "unit": "\u00b0C",
+          "min_value": 20,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "cpu_temp",
+          "widget": "bar",
+          "x": 8,
+          "y": 96,
+          "w": 112,
+          "h": 4,
+          "scale": 1,
+          "color": "#FFB000",
+          "unit": "\u00b0C",
+          "min_value": 20,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#332200",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 108,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#0A0800",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFB000",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 6,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "MEMORY",
+          "x": 8,
+          "y": 20,
+          "w": 112,
+          "h": 12,
+          "scale": 2,
+          "color": "#FFD479",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "ram_percent",
+          "widget": "number",
+          "x": 8,
+          "y": 38,
+          "w": 112,
+          "h": 48,
+          "scale": 6,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "ram_percent",
+          "widget": "bar",
+          "x": 8,
+          "y": 96,
+          "w": 112,
+          "h": 4,
+          "scale": 1,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#332200",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 108,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": {
+        "kind": "color",
+        "color": "#0A0800",
+        "image": null,
+        "fit": "crop",
+        "dim": 0
+      },
+      "accent": "#FFB000",
+      "layers": [
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 6,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "DISK",
+          "x": 8,
+          "y": 20,
+          "w": 112,
+          "h": 12,
+          "scale": 2,
+          "color": "#FFD479",
+          "align": "left"
+        },
+        {
+          "kind": "metric",
+          "metric": "disk_percent",
+          "widget": "number",
+          "x": 8,
+          "y": 38,
+          "w": 112,
+          "h": 48,
+          "scale": 6,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#222222",
+          "align": "center"
+        },
+        {
+          "kind": "metric",
+          "metric": "disk_percent",
+          "widget": "bar",
+          "x": 8,
+          "y": 96,
+          "w": 112,
+          "h": 4,
+          "scale": 1,
+          "color": "#FFB000",
+          "unit": "%",
+          "min_value": 0,
+          "max_value": 100,
+          "decimals": 0,
+          "track_color": "#332200",
+          "align": "center"
+        },
+        {
+          "kind": "text",
+          "source": "static",
+          "text": "+--------------+",
+          "x": 4,
+          "y": 108,
+          "w": 120,
+          "h": 10,
+          "scale": 1,
+          "color": "#FFB000",
+          "align": "left"
+        }
+      ]
+    }
+  ]
+}

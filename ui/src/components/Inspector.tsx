@@ -1,16 +1,20 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
-import type { Align, Layer, MetricKey, Panel, Widget } from "../types";
+import type { Align, Layer, MetricKey, Panel, PresetMeta, Widget } from "../types";
 import { METRICS, metricMeta } from "../types";
 import { mediaUrl } from "../api";
 
 interface Props {
   panel: Panel;
   layer: Layer | null;
+  presets: PresetMeta[];
   uploading: boolean;
   onLayer: (patch: Partial<Layer>) => void;
   onPanel: (patch: Partial<Panel>) => void;
   onBackground: (patch: Partial<Panel["background"]>) => void;
   onUpload: (file: File) => void;
+  onApplyPanelPreset: (presetId: string) => void;
+  onClearLayers: () => void;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -50,12 +54,16 @@ function NumberInput({
 export default function Inspector({
   panel,
   layer,
+  presets,
   uploading,
   onLayer,
   onPanel,
   onBackground,
   onUpload,
+  onApplyPanelPreset,
+  onClearLayers,
 }: Props) {
+  const [themeChoice, setThemeChoice] = useState("");
   const background = panel.background;
 
   return (
@@ -148,6 +156,38 @@ export default function Inspector({
             <code>{panel.accent}</code>
           </span>
         </Field>
+
+        <div className="subgroup">
+          <span className="subgroup-title">Theme for this panel only</span>
+          <div className="theme-row">
+            <select value={themeChoice} onChange={(event) => setThemeChoice(event.target.value)}>
+              <option value="">Choose a theme…</option>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="button-small"
+              disabled={!themeChoice}
+              onClick={() => onApplyPanelPreset(themeChoice)}
+            >
+              Apply
+            </button>
+          </div>
+          <p className="hint">Replaces this panel's layers and background. Other panels stay as they are.</p>
+        </div>
+
+        <button
+          type="button"
+          className="button-small danger-ghost"
+          disabled={panel.layers.length === 0}
+          onClick={onClearLayers}
+        >
+          Remove all layers from this panel
+        </button>
       </section>
 
       {layer ? (
@@ -262,10 +302,35 @@ export default function Inspector({
             </Field>
           )}
 
+          {(layer.kind === "text" || layer.widget === "number") && (
+            <>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={layer.auto_scale}
+                  onChange={(event) => onLayer({ auto_scale: event.target.checked })}
+                />
+                <span>Scale text to fit the box</span>
+              </label>
+              <p className="hint">
+                {layer.auto_scale
+                  ? "Drag the corner handles on the panel to make the text bigger or smaller."
+                  : "Text keeps its size. Tick the box above to resize it by dragging."}
+              </p>
+            </>
+          )}
+
           <div className="field-grid">
-            <Field label="Text size">
-              <NumberInput value={layer.scale} min={1} max={8} onChange={(scale) => onLayer({ scale })} />
-            </Field>
+            {!layer.auto_scale && (
+              <Field label="Text size">
+                <NumberInput
+                  value={layer.scale}
+                  min={1}
+                  max={8}
+                  onChange={(scale) => onLayer({ scale })}
+                />
+              </Field>
+            )}
             <Field label="Decimals">
               <NumberInput
                 value={layer.decimals}

@@ -47,7 +47,8 @@ function makeMetricLayer(metric: MetricKey, stacked: number): Layer {
     h: 40,
     color: "#FFFFFF",
     track_color: "#2A2A2A",
-    scale: 3,
+    scale: 8,
+    auto_scale: true,
     decimals: meta.decimals,
     unit: meta.unit,
     min_value: meta.min,
@@ -71,7 +72,8 @@ function makeTextLayer(stacked: number): Layer {
     h: 14,
     color: "#FFFFFF",
     track_color: "#2A2A2A",
-    scale: 2,
+    scale: 8,
+    auto_scale: true,
     decimals: 0,
     unit: "",
     min_value: 0,
@@ -269,19 +271,41 @@ export default function App() {
     });
   };
 
-  const applyPreset = async (presetId: string) => {
+  const applyPreset = async (presetId: string, panelIndex?: number) => {
     if (!presetId) return;
     try {
-      const reply = await api.applyPreset(presetId);
+      const reply = await api.applyPreset(presetId, panelIndex);
       setTheme(reply.theme);
       setSelectedLayerId(null);
       setNotice({
         tone: "info",
-        text: `Loaded “${reply.theme.name}”. Press “Send to display” when you're happy with it.`,
+        text:
+          panelIndex === undefined
+            ? `Loaded “${reply.theme.name}” on all five panels. Press “Send to display” when you're happy with it.`
+            : `Applied a theme to panel ${panelIndex + 1}. The other panels are unchanged.`,
       });
     } catch (error) {
       setNotice(noticeFrom(error));
     }
+  };
+
+  const movePanel = (from: number, to: number) => {
+    if (from === to) return;
+    setTheme((current) => {
+      if (!current) return current;
+      const panels = [...current.panels];
+      const [moved] = panels.splice(from, 1);
+      panels.splice(to, 0, moved);
+      return { ...current, panels };
+    });
+    setSelectedPanel(to);
+    setSelectedLayerId(null);
+  };
+
+  const clearLayers = () => {
+    updatePanel(selectedPanel, (current) => ({ ...current, layers: [] }));
+    setSelectedLayerId(null);
+    setNotice({ tone: "info", text: `Cleared every layer from panel ${selectedPanel + 1}.` });
   };
 
   const send = async () => {
@@ -361,6 +385,7 @@ export default function App() {
               setSelectedPanel(index);
               setSelectedLayerId(null);
             }}
+            onReorder={movePanel}
           />
           <LayerList
             layers={panel.layers}
@@ -380,7 +405,9 @@ export default function App() {
             preview={previews[selectedPanel]}
             selectedLayerId={selectedLayerId}
             onSelect={setSelectedLayerId}
-            onLayerChange={(layer) => updateLayer(layer.id, { x: layer.x, y: layer.y })}
+            onLayerChange={(layer) =>
+              updateLayer(layer.id, { x: layer.x, y: layer.y, w: layer.w, h: layer.h })
+            }
           />
 
           {panel.layers.length === 0 && (
@@ -445,6 +472,7 @@ export default function App() {
           <Inspector
             panel={panel}
             layer={selectedLayer}
+            presets={presets}
             uploading={uploading}
             onLayer={(patch) => selectedLayer && updateLayer(selectedLayer.id, patch)}
             onPanel={(patch) => updatePanel(selectedPanel, (current) => ({ ...current, ...patch }))}
@@ -455,6 +483,8 @@ export default function App() {
               }))
             }
             onUpload={(file) => void upload(file)}
+            onApplyPanelPreset={(presetId) => void applyPreset(presetId, selectedPanel)}
+            onClearLayers={clearLayers}
           />
         </aside>
       </div>

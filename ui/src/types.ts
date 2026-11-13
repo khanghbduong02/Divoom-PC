@@ -55,6 +55,7 @@ export interface Layer {
   color: string;
   track_color: string;
   scale: number;
+  auto_scale: boolean;
   decimals: number;
   unit: string;
   min_value: number;

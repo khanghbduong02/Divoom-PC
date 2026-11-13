@@ -66,14 +66,19 @@ Useful flags: `--port`, `--no-browser`, `--no-discovery`, `--data-dir <path>`, a
 
 ## Editing
 
-- **Panel rail** — the five panels, with live thumbnails rendered by the agent.
-- **Stage** — the real 128×128 geometry at 4×. Drag a layer's box to move it; it snaps
-  to whole pixels.
-- **Layers** — any number per panel. **Add metric** inserts a sensor readout, **Add text**
-  inserts a label, clock or date. Reorder, hide or delete from the list.
+- **Panel rail** — the five panels, with live thumbnails rendered by the agent. Drag a
+  panel onto another to reorder the strip; any panel can be left empty.
+- **Stage** — the real 128×128 geometry at 4×. Drag a layer to move it (snaps to whole
+  pixels), drag a corner handle to resize it. Text and numbers are set to fill their box,
+  so resizing scales them; untick **Scale text to fit the box** to pin a fixed size.
+- **Layers** — any number per panel, and all of them may sit on a single panel: there is
+  no requirement to spread a layout over five. **Add metric** inserts a sensor readout,
+  **Add text** inserts a label, clock or date. Reorder, hide or delete from the list.
 - **Inspector** — per panel: background colour or image (fit / crop / stretch, dim),
-  accent colour. Per layer: metric, widget (big number or bar), position, size, colour,
-  text size, decimals, unit, gauge min/max, alignment.
+  accent colour, **Theme for this panel only** (applies a preset to this panel and leaves
+  the others alone) and **Remove all layers from this panel**. Per layer: metric, widget
+  (big number or bar), position, size, colour, text sizing, decimals, unit, gauge min/max,
+  alignment.
 - **Live preview** streams from the agent at the configured refresh interval (1.5 s by
   default) using real sensor values, so what you see is what gets sent.
 - Edits autosave to `config.json`; **Send** pushes the current design.

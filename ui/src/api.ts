@@ -81,8 +81,11 @@ export const api = {
   putTheme: (theme: Theme) =>
     request<{ theme: Theme }>("/api/theme", { method: "PUT", body: JSON.stringify(theme) }),
   getPresets: () => request<{ presets: PresetMeta[] }>("/api/presets"),
-  applyPreset: (id: string) =>
-    request<{ theme: Theme }>(`/api/presets/${id}/apply`, { method: "POST" }),
+  applyPreset: (id: string, panel?: number) =>
+    request<{ theme: Theme }>(`/api/presets/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ panel: panel ?? null }),
+    }),
   getConfig: () =>
     request<{ device: DeviceSummary; settings: Settings; data_dir: string; media_dir: string }>(
       "/api/config",

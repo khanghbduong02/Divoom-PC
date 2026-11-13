@@ -20,7 +20,9 @@ yourself with the steps below).
 1. **Put it anywhere** you like — Desktop, Documents, a folder on `D:`. There is no
    installer and nothing else to download.
 2. **Double-click it.** Windows may show a blue *"Windows protected your PC"* box
-   because the file is not code-signed: click **More info → Run anyway**.
+   because the file is not code-signed: click **More info → Run anyway**. If Windows
+   instead says the app can't run and nothing offers *Run anyway*, Smart App Control is
+   blocking unsigned software — see [Smart App Control](#smart-app-control) below.
 3. The editor opens in your browser and a small icon appears in the notification area
    (bottom-right of the taskbar, possibly behind the `^` arrow).
 4. **Connect the display** once:
@@ -53,6 +55,15 @@ Settings). Back up that folder to keep your themes; delete it to start clean.
 
 **Uninstalling:** Quit from the tray, untick *Start with Windows*, delete the exe and the
 data folder above. Nothing else is written to the system.
+
+### Smart App Control
+
+Windows 11's Smart App Control only runs apps it considers reputable, and an unsigned
+exe built on your own PC has no reputation. If double-clicking shows a block with no
+*Run anyway* option, either run from source (below) or turn Smart App Control off in
+Windows Security → App & browser control. Be aware that Windows does not allow turning
+it back on without reinstalling Windows, so decide deliberately. For handing the app to
+other people, code-sign the exe; that is also what removes the SmartScreen prompt.
 
 ---
 

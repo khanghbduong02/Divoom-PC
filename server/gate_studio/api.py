@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import sys
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 
 from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -18,6 +20,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .auth import TokenAuthMiddleware
 from .config import ConfigStore
+from .desktop import autostart_enabled, autostart_supported, set_autostart
 from .device import DeviceError, DeviceErrorKind, DeviceTransport, FrameIds, discover, probe_host
 from .models import AppConfig, AppSettings, DeviceConfig, Theme
 from .presets import list_presets, load_preset
@@ -41,6 +44,29 @@ class AppState:
         self.frame_lock = Lock()
         self.last_replies: list[dict[str, object]] = []
         self.last_error: dict[str, object] | None = None
+
+        # always-on pushing
+        self.last_frames: dict[int, bytes] = {}
+        self.last_push_at: float | None = None
+        self.skipped_frames = 0
+        self._push_thread: Thread | None = None
+        self._stop_push = Event()
+        self._next_push = 0.0
+
+    def start_pusher(self) -> None:
+        if self._push_thread and self._push_thread.is_alive():
+            return
+        self._stop_push.clear()
+        self._push_thread = Thread(
+            target=_push_loop, args=(self,), name="auto-push", daemon=True
+        )
+        self._push_thread.start()
+
+    def stop_pusher(self) -> None:
+        self._stop_push.set()
+        if self._push_thread:
+            self._push_thread.join(timeout=2.0)
+            self._push_thread = None
 
     # -- config --------------------------------------------------------
     def save(self) -> None:
@@ -116,8 +142,14 @@ class ApplyPresetRequest(BaseModel):
 
 class SettingsPatch(BaseModel):
     refresh_interval: float | None = None
+    push_interval: float | None = None
     allow_lan: bool | None = None
     auto_push: bool | None = None
+    autostart: bool | None = None
+
+
+class AutostartRequest(BaseModel):
+    enabled: bool
 
 
 # -- helpers -----------------------------------------------------------
@@ -136,6 +168,7 @@ def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[
             payload = encode_jpeg(images[index])
             pic_id = state.ids.next()
             reply = transport.send_frame(payload, [index], pic_id)
+            state.last_frames[index] = payload
             results.append(
                 {
                     "panel": index,
@@ -146,7 +179,59 @@ def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[
                 }
             )
         state.last_replies = results
+        state.last_push_at = time.time()
         return results
+
+
+def _push_loop(state: AppState) -> None:
+    """Keep the panels live: re-render and send on an interval, skipping
+    frames whose bytes did not change so an idle panel is not rewritten."""
+    last_full = 0.0
+    while not state._stop_push.wait(0.3):
+        settings = state.config.settings
+        if not settings.auto_push or not state.config.device.configured:
+            continue
+        now = time.monotonic()
+        if now < state._next_push:
+            continue
+        state._next_push = now + settings.push_interval
+        try:
+            with state.frame_lock:
+                transport = state.transport()
+                values = state.collector.snapshot()
+                images = render_all(state.config.theme, values, state.store.media_dir)
+                if now - last_full > 60:
+                    state.last_frames.clear()
+                    last_full = now
+                for index, image in enumerate(images):
+                    payload = encode_jpeg(image)
+                    if state.last_frames.get(index) == payload:
+                        state.skipped_frames += 1
+                        continue
+                    reply = transport.send_frame(payload, [index], state.ids.next())
+                    state.last_frames[index] = payload
+                    state.last_replies = [
+                        {
+                            "panel": index,
+                            "ok": True,
+                            "bytes": len(payload),
+                            "reply": reply,
+                        }
+                    ]
+                state.last_push_at = time.time()
+                state.last_error = None
+        except DeviceError as exc:
+            state.last_error = exc.as_dict()
+            state.last_frames.clear()
+            state._next_push = time.monotonic() + max(3.0, settings.push_interval)
+        except Exception as exc:  # noqa: BLE001 - the loop must survive anything
+            state.last_error = {
+                "kind": "device",
+                "message": f"Update failed: {exc}",
+                "raw": None,
+                "hint": None,
+            }
+            state.last_frames.clear()
 
 
 def _theme_with_media(theme: Theme, store: ConfigStore) -> Theme:
@@ -172,9 +257,11 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
                 state.transport().reset_pic_id()
             except DeviceError as exc:
                 state.last_error = exc.as_dict()
+        state.start_pusher()
         try:
             yield
         finally:
+            state.stop_pusher()
             state.collector.stop()
             state.close_transport()
 
@@ -206,16 +293,45 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
         settings = state.config.settings
         if patch.refresh_interval is not None:
             settings.refresh_interval = patch.refresh_interval
+        if patch.push_interval is not None:
+            settings.push_interval = patch.push_interval
         if patch.auto_push is not None:
             settings.auto_push = patch.auto_push
         restart_required = False
         if patch.allow_lan is not None and patch.allow_lan != settings.allow_lan:
             settings.allow_lan = patch.allow_lan
             restart_required = True
+        if patch.autostart is not None and patch.autostart != settings.autostart:
+            settings.autostart = patch.autostart
+            set_autostart(patch.autostart)
         state.save()
         return {
             "settings": AppSettings.model_validate(settings.model_dump()).model_dump(),
             "restart_required": restart_required,
+            "autostart": autostart_enabled(),
+        }
+
+    @app.get("/api/system")
+    def system() -> dict[str, object]:
+        return {
+            "version": __version__,
+            "autostart": autostart_enabled(),
+            "autostart_supported": autostart_supported(),
+            "frozen": bool(getattr(sys, "frozen", False)),
+            "data_dir": str(store.data_dir),
+            "auto_push": state.config.settings.auto_push,
+            "push_interval": state.config.settings.push_interval,
+            "last_push_at": state.last_push_at,
+            "skipped_frames": state.skipped_frames,
+        }
+
+    @app.post("/api/system/autostart")
+    def set_autostart_state(body: AutostartRequest) -> dict[str, object]:
+        state.config.settings.autostart = body.enabled
+        state.save()
+        return {
+            "autostart": set_autostart(body.enabled),
+            "supported": autostart_supported(),
         }
 
     # -- device --------------------------------------------------------
@@ -367,6 +483,9 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             "last_error": state.last_error,
             "sensors": state.collector.snapshot(),
             "data_dir": str(store.data_dir),
+            "auto_push": state.config.settings.auto_push,
+            "last_push_at": state.last_push_at,
+            "skipped_frames": state.skipped_frames,
         }
 
     # -- live preview --------------------------------------------------

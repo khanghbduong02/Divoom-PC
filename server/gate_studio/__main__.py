@@ -1,20 +1,28 @@
-"""Start the local agent: ``python -m gate_studio``."""
+"""Start the local agent: ``python -m gate_studio`` or the packaged executable."""
 
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import socket
+import sys
 import threading
+import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 from urllib.parse import quote
 
 import uvicorn
 
+from . import desktop
 from .api import create_app
 from .config import ConfigStore
 from .device import discover_cloud
 from .device.errors import DeviceError
+
+log = logging.getLogger("gate_studio")
 
 
 def lan_address() -> str | None:
@@ -35,21 +43,127 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--data-dir", default=None, help="override the app data folder")
     parser.add_argument("--lan", action="store_true", help="also allow other devices on the LAN")
+    parser.add_argument("--silent", action="store_true", help="do not open a browser (autostart)")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--no-tray", action="store_true")
     parser.add_argument("--no-discovery", action="store_true", help="skip the startup LAN discovery")
     return parser.parse_args(argv)
+
+
+def setup_logging(store: ConfigStore) -> None:
+    handlers: list[logging.Handler] = []
+    try:
+        handlers.append(logging.FileHandler(store.data_dir / "agent.log", encoding="utf-8"))
+    except OSError:
+        pass
+    if not getattr(sys, "frozen", False):
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers or None,
+    )
+
+
+def already_running(port: int) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.0) as reply:
+            payload = json.loads(reply.read())
+    except Exception:  # noqa: BLE001 - anything here means "not our agent"
+        return False
+    return bool(payload.get("ok")) and "version" in payload
+
+
+class LocalApi:
+    """Tiny client the tray menu uses to talk to its own agent."""
+
+    def __init__(self, port: int, token: str) -> None:
+        self.base = f"http://127.0.0.1:{port}"
+        self.token = token
+
+    def call(self, method: str, path: str, body: dict | None = None) -> dict | None:
+        request = urllib.request.Request(
+            self.base + path,
+            method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=8) as reply:
+                return json.loads(reply.read() or b"{}")
+        except Exception as exc:  # noqa: BLE001 - tray actions must never crash
+            log.warning("local api %s %s failed: %s", method, path, exc)
+            return None
+
+
+def run_tray_session(server: uvicorn.Server, api: LocalApi, url: str, settings: dict) -> None:
+    updates = {"enabled": bool(settings.get("auto_push", True))}
+
+    def open_editor() -> None:
+        webbrowser.open(url)
+
+    def send_now() -> None:
+        api.call("POST", "/api/send")
+
+    def toggle_updates() -> None:
+        updates["enabled"] = not updates["enabled"]
+        api.call("PUT", "/api/config/settings", {"auto_push": updates["enabled"]})
+
+    def open_settings() -> None:
+        webbrowser.open(url + "&settings=1")
+
+    def quit_app() -> None:
+        server.should_exit = True
+
+    icon = desktop.run_tray(
+        open_editor=open_editor,
+        send_now=send_now,
+        toggle_updates=toggle_updates,
+        open_settings=open_settings,
+        quit_app=quit_app,
+        updates_enabled=lambda: updates["enabled"],
+    )
+    if icon is None:
+        return
+    # the tray loop ended, so the user asked to quit (or the session closed)
+    server.should_exit = True
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     store = ConfigStore(Path(args.data_dir) if args.data_dir else None)
     config = store.load()
-    app = create_app(store)
+    setup_logging(store)
     token = store.token()
 
     bind_lan = args.lan or config.settings.allow_lan
     host = args.host or ("0.0.0.0" if bind_lan else "127.0.0.1")
     url = f"http://localhost:{args.port}/?token={quote(token)}"
+
+    if already_running(args.port):
+        print("Gate Theme Studio is already running — opening the editor.")
+        if not (args.no_browser or args.silent):
+            webbrowser.open(url)
+        return
+
+    # A packaged build keeps itself registered at login; source checkouts do not
+    # touch the registry unless the user flips the switch in Settings.
+    if getattr(sys, "frozen", False) and config.settings.autostart:
+        desktop.set_autostart(True)
+
+    app = create_app(store)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=host, port=args.port, log_level="warning", log_config=None)
+    )
+    thread = threading.Thread(target=server.run, name="agent-http", daemon=True)
+    thread.start()
+
+    deadline = time.time() + 10
+    while not server.started and time.time() < deadline:
+        time.sleep(0.05)
 
     print("Gate Theme Studio")
     print(f"  editor : {url}")
@@ -60,6 +174,14 @@ def main(argv: list[str] | None = None) -> None:
         print("  warning: the editor is reachable from your whole network while this runs.")
     if config.device.configured:
         print(f"  device : {config.device.host}:{config.device.port} ({config.device.protocol})")
+        print(
+            "  updates: "
+            + (
+                f"on, every {config.settings.push_interval:g}s"
+                if config.settings.auto_push
+                else "paused"
+            )
+        )
     else:
         print("  device : not configured — use the connection wizard in the editor")
 
@@ -74,10 +196,25 @@ def main(argv: list[str] | None = None) -> None:
 
         threading.Thread(target=_announce, name="startup-discovery", daemon=True).start()
 
-    if not args.no_browser:
+    if not (args.no_browser or args.silent):
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
-    uvicorn.run(app, host=host, port=args.port, log_level="warning")
+    if not args.no_tray:
+        try:
+            run_tray_session(
+                server,
+                LocalApi(args.port, token),
+                url,
+                {
+                    "auto_push": config.settings.auto_push,
+                },
+            )
+        except KeyboardInterrupt:
+            pass
+
+    server.should_exit = True
+    thread.join(timeout=5)
+    log.info("agent stopped")
 
 
 if __name__ == "__main__":

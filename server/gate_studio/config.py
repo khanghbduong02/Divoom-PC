@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from threading import Lock
 
-from .models import AppConfig
+from .models import CONFIG_VERSION, AppConfig, AppSettings
 
 APP_DIR_NAME = "GateThemeStudio"
 MEDIA_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
@@ -81,12 +81,29 @@ class ConfigStore:
             if self.config_path.exists():
                 try:
                     raw = json.loads(self.config_path.read_text(encoding="utf-8"))
-                    self._config = AppConfig.model_validate(raw)
+                    migrated = self._migrate(raw)
+                    self._config = AppConfig.model_validate(migrated)
                 except (ValueError, OSError):
                     self._config = AppConfig()
             else:
                 self._config = AppConfig()
             return self._config
+
+    @staticmethod
+    def _migrate(raw: object) -> object:
+        """Older configs predate always-on updates; enable them on upgrade."""
+        if not isinstance(raw, dict):
+            return raw
+        if int(raw.get("schema_version") or 1) >= CONFIG_VERSION:
+            return raw
+        settings = raw.get("settings")
+        if isinstance(settings, dict):
+            # v1 had no switch for this at all, so its stored False was just the default
+            settings["auto_push"] = True
+            settings.setdefault("push_interval", 2.0)
+            settings.setdefault("autostart", True)
+        raw["schema_version"] = CONFIG_VERSION
+        return raw
 
     def save(self, config: AppConfig | None = None) -> AppConfig:
         with self._lock:

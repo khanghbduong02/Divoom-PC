@@ -199,16 +199,28 @@ class DeviceConfig(BaseModel):
 
 class AppSettings(BaseModel):
     refresh_interval: float = 1.5
+    #: keep the panels live without pressing Send
+    auto_push: bool = True
+    push_interval: float = 2.0
     allow_lan: bool = False
-    auto_push: bool = False
+    autostart: bool = True
 
     @field_validator("refresh_interval")
     @classmethod
     def _validate_interval(cls, value: float) -> float:
         return max(0.5, min(10.0, value))
 
+    @field_validator("push_interval")
+    @classmethod
+    def _validate_push_interval(cls, value: float) -> float:
+        return max(0.5, min(60.0, value))
+
+
+CONFIG_VERSION = 2
+
 
 class AppConfig(BaseModel):
+    schema_version: int = CONFIG_VERSION
     device: DeviceConfig = Field(default_factory=DeviceConfig)
     settings: AppSettings = Field(default_factory=AppSettings)
     theme: Theme = Field(default_factory=lambda: Theme(name="Untitled"))

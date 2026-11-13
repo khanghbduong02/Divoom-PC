@@ -173,3 +173,28 @@ def test_auto_scale_survives_a_theme_round_trip(client: TestClient) -> None:
     theme["panels"][0]["layers"] = [layer]
     stored = client.put("/api/theme", json=theme).json()["theme"]
     assert stored["panels"][0]["layers"][0]["auto_scale"] is True
+
+
+def test_system_reports_always_on_state(client: TestClient) -> None:
+    body = client.get("/api/system").json()
+    assert body["version"]
+    assert body["auto_push"] is True
+    assert "autostart" in body
+    assert "last_push_at" in body
+
+
+def test_push_settings_round_trip(client: TestClient) -> None:
+    body = client.put(
+        "/api/config/settings", json={"push_interval": 5, "auto_push": False}
+    ).json()
+    assert body["settings"]["push_interval"] == 5
+    assert body["settings"]["auto_push"] is False
+    stored = client.get("/api/config").json()["settings"]
+    assert stored["push_interval"] == 5
+    assert stored["auto_push"] is False
+
+
+def test_autostart_endpoint_is_safe_without_registry(client: TestClient) -> None:
+    response = client.post("/api/system/autostart", json={"enabled": False})
+    assert response.status_code == 200
+    assert response.json()["supported"] in (True, False)

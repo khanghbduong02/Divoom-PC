@@ -10,6 +10,7 @@ dist/
 # Node / UI
 node_modules/
 ui/dist/
+ui/*.tsbuildinfo
 server/gate_studio/static/
 
 # Local runtime data

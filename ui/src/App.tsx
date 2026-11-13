@@ -124,9 +124,7 @@ export default function App() {
         await loadConfig();
       } catch (error) {
         if (!cancelled) {
-          setBootError(
-            error instanceof Error ? error.message : "Could not reach the local agent.",
-          );
+          setBootError(error instanceof Error ? error.message : "Could not reach the local agent.");
         }
       }
     })();
@@ -163,7 +161,7 @@ export default function App() {
           setSensors(message.sensors);
           setDevice(message.device);
         } catch {
-          // ignore a malformed tick; the next one arrives in a moment
+          // a malformed tick is not worth surfacing; the next one arrives shortly
         }
       };
       socket.onclose = () => {
@@ -183,7 +181,7 @@ export default function App() {
     };
   }, []);
 
-  // save the theme when the editor stops moving
+  // save after the editor settles
   useEffect(() => {
     if (!theme) return;
     if (skipFirstSave.current) {
@@ -203,7 +201,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [theme]);
 
-  // push the draft to the preview renderer while dragging
+  // stream drafts to the preview renderer
   useEffect(() => {
     if (!theme) return;
     const timer = window.setTimeout(() => {
@@ -218,20 +216,17 @@ export default function App() {
   const panel: Panel | null = theme ? theme.panels[selectedPanel] ?? theme.panels[0] : null;
   const selectedLayer = panel?.layers.find((layer) => layer.id === selectedLayerId) ?? null;
 
-  const updatePanel = useCallback(
-    (index: number, updater: (current: Panel) => Panel) => {
-      setTheme((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          panels: current.panels.map((existing, position) =>
-            position === index ? updater(existing) : existing,
-          ),
-        };
-      });
-    },
-    [],
-  );
+  const updatePanel = useCallback((index: number, updater: (current: Panel) => Panel) => {
+    setTheme((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        panels: current.panels.map((existing, position) =>
+          position === index ? updater(existing) : existing,
+        ),
+      };
+    });
+  }, []);
 
   const updateLayer = useCallback(
     (layerId: string, patch: Partial<Layer>) => {
@@ -246,10 +241,7 @@ export default function App() {
   );
 
   const addLayer = (layer: Layer) => {
-    updatePanel(selectedPanel, (current) => ({
-      ...current,
-      layers: [...current.layers, layer],
-    }));
+    updatePanel(selectedPanel, (current) => ({ ...current, layers: [...current.layers, layer] }));
     setSelectedLayerId(layer.id);
   };
 
@@ -283,7 +275,10 @@ export default function App() {
       const reply = await api.applyPreset(presetId);
       setTheme(reply.theme);
       setSelectedLayerId(null);
-      setNotice({ tone: "info", text: `Loaded ${reply.theme.name}. Press Send to put it on the panels.` });
+      setNotice({
+        tone: "info",
+        text: `Loaded “${reply.theme.name}”. Press “Send to display” when you're happy with it.`,
+      });
     } catch (error) {
       setNotice(noticeFrom(error));
     }
@@ -297,7 +292,7 @@ export default function App() {
       const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
       setNotice({
         tone: "ok",
-        text: `Sent ${reply.results.length} panel(s), ${bytes} bytes total.`,
+        text: `Sent to ${reply.results.length} panel(s), ${bytes} bytes in total.`,
       });
     } catch (error) {
       setNotice(noticeFrom(error));
@@ -314,7 +309,7 @@ export default function App() {
         ...current,
         background: { ...current.background, kind: "image", image: reply.name },
       }));
-      setNotice({ tone: "info", text: "Background image added." });
+      setNotice({ tone: "info", text: "Picture added as the panel background." });
     } catch (error) {
       setNotice(noticeFrom(error));
     } finally {
@@ -324,18 +319,21 @@ export default function App() {
 
   if (bootError) {
     return (
-      <div className="boot boot-error">
-        <h1>Cannot reach the agent</h1>
-        <p>{bootError}</p>
-        <p className="help">
-          Open the URL the agent printed, including its <code>?token=</code> part, then reload.
-        </p>
+      <div className="boot">
+        <div className="boot-card">
+          <h1>Can't reach the editor</h1>
+          <p>{bootError}</p>
+          <p className="hint">
+            Open the link the agent printed, including the <code>?token=</code> part, then
+            reload this page.
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!theme || !panel) {
-    return <div className="boot">Loading editor…</div>;
+    return <div className="boot">Loading…</div>;
   }
 
   return (
@@ -376,7 +374,7 @@ export default function App() {
           />
         </aside>
 
-        <main className="center">
+        <main className="editor">
           <Stage
             panel={panel}
             preview={previews[selectedPanel]}
@@ -385,15 +383,45 @@ export default function App() {
             onLayerChange={(layer) => updateLayer(layer.id, { x: layer.x, y: layer.y })}
           />
 
-          <div className="sensor-strip">
+          {panel.layers.length === 0 && (
+            <section className="empty-state">
+              <h2>Panel {selectedPanel + 1} is empty</h2>
+              <p className="hint">
+                Add a sensor reading, or apply a ready-made theme to all five panels.
+              </p>
+              <div className="empty-actions">
+                <button
+                  type="button"
+                  className="button-small"
+                  onClick={() => addLayer(makeMetricLayer("cpu_percent", 0))}
+                >
+                  Add a CPU readout
+                </button>
+              </div>
+              <div className="preset-cards">
+                {presets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="preset-card"
+                    onClick={() => void applyPreset(preset.id)}
+                  >
+                    <strong>{preset.name}</strong>
+                    <span>{preset.description}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="sensor-row">
             {METRICS.map((metric) => {
               const value = sensors[metric.key];
+              const missing = value === null || value === undefined;
               return (
-                <span key={metric.key} className={value === null || value === undefined ? "is-missing" : ""}>
+                <span key={metric.key} className={missing ? "sensor is-missing" : "sensor"}>
                   <em>{metric.label}</em>
-                  {value === null || value === undefined
-                    ? "--"
-                    : `${Number(value).toFixed(metric.decimals)}${metric.unit}`}
+                  {missing ? "—" : `${Number(value).toFixed(metric.decimals)}${metric.unit}`}
                 </span>
               );
             })}
@@ -403,12 +431,17 @@ export default function App() {
             <div className={`notice notice-${notice.tone}`}>
               <strong>{notice.text}</strong>
               {notice.hint && <p>{notice.hint}</p>}
-              {notice.raw && <pre className="raw">{notice.raw}</pre>}
+              {notice.raw && (
+                <details className="raw-details">
+                  <summary>Show details</summary>
+                  <pre>{notice.raw}</pre>
+                </details>
+              )}
             </div>
           )}
         </main>
 
-        <aside className="rightbar">
+        <aside className="properties">
           <Inspector
             panel={panel}
             layer={selectedLayer}

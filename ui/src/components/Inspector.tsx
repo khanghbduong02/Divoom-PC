@@ -13,10 +13,10 @@ interface Props {
   onUpload: (file: File) => void;
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="row">
-      <span>{label}</span>
+    <label className="field">
+      <span className="field-label">{label}</span>
       {children}
     </label>
   );
@@ -59,30 +59,24 @@ export default function Inspector({
   const background = panel.background;
 
   return (
-    <section className="inspector">
-      <header>
-        <h2>Panel</h2>
-      </header>
+    <div className="inspector">
+      <section className="field-group">
+        <h2 className="section-title">Panel appearance</h2>
 
-      <div className="group">
-        <Row label="Background">
+        <Field label="Background">
           <select
             value={background.kind}
-            onChange={(event) => {
-              const kind = event.target.value as Panel["background"]["kind"];
-              onBackground({ kind });
-              if (kind === "image" && !background.image) {
-                onBackground({ color: background.color });
-              }
-            }}
+            onChange={(event) =>
+              onBackground({ kind: event.target.value as Panel["background"]["kind"] })
+            }
           >
-            <option value="color">Colour</option>
-            <option value="image">Image</option>
+            <option value="color">Solid colour</option>
+            <option value="image">Picture</option>
           </select>
-        </Row>
+        </Field>
 
-        <Row label="Base colour">
-          <span className="colour-field">
+        <Field label="Colour">
+          <span className="color-field">
             <input
               type="color"
               value={background.color}
@@ -90,39 +84,39 @@ export default function Inspector({
             />
             <code>{background.color}</code>
           </span>
-        </Row>
+        </Field>
 
         {background.kind === "image" && (
           <>
-            <Row label="Fit">
+            <Field label="Fit">
               <select
                 value={background.fit}
                 onChange={(event) =>
                   onBackground({ fit: event.target.value as Panel["background"]["fit"] })
                 }
               >
-                <option value="crop">Crop to fill</option>
-                <option value="fit">Fit (letterbox)</option>
+                <option value="crop">Fill the panel</option>
+                <option value="fit">Fit inside</option>
                 <option value="stretch">Stretch</option>
               </select>
-            </Row>
-            <Row label="Dim">
+            </Field>
+            <Field label="Darken">
               <NumberInput
                 value={background.dim}
                 min={0}
                 max={100}
                 onChange={(dim) => onBackground({ dim })}
               />
-            </Row>
-            <div className="image-row">
+            </Field>
+            <div className="picture-row">
               {background.image ? (
-                <img className="image-thumb" src={mediaUrl(background.image)} alt="" />
+                <img className="picture-thumb" src={mediaUrl(background.image)} alt="" />
               ) : (
-                <span className="image-thumb image-thumb-empty">none</span>
+                <span className="picture-thumb picture-empty">None</span>
               )}
-              <div className="image-actions">
+              <div className="picture-actions">
                 <label className="file-button">
-                  {uploading ? "Uploading…" : "Choose image"}
+                  {uploading ? "Uploading…" : "Choose picture"}
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
@@ -135,7 +129,7 @@ export default function Inspector({
                   />
                 </label>
                 {background.image && (
-                  <button type="button" onClick={() => onBackground({ image: null })}>
+                  <button type="button" className="button-small" onClick={() => onBackground({ image: null })}>
                     Remove
                   </button>
                 )}
@@ -144,8 +138,8 @@ export default function Inspector({
           </>
         )}
 
-        <Row label="Accent">
-          <span className="colour-field">
+        <Field label="Accent">
+          <span className="color-field">
             <input
               type="color"
               value={panel.accent}
@@ -153,162 +147,157 @@ export default function Inspector({
             />
             <code>{panel.accent}</code>
           </span>
-        </Row>
-      </div>
+        </Field>
+      </section>
 
       {layer ? (
-        <>
-          <header>
-            <h2>{layer.kind === "metric" ? "Metric layer" : "Text layer"}</h2>
-          </header>
-          <div className="group">
-            {layer.kind === "metric" ? (
-              <>
-                <Row label="Metric">
-                  <select
-                    value={layer.metric}
-                    onChange={(event) => {
-                      const metric = event.target.value as MetricKey;
-                      const meta = metricMeta(metric);
-                      onLayer({
-                        metric,
-                        unit: meta.unit,
-                        min_value: meta.min,
-                        max_value: meta.max,
-                        decimals: meta.decimals,
-                      });
-                    }}
-                  >
-                    {METRICS.map((metric) => (
-                      <option key={metric.key} value={metric.key}>
-                        {metric.label}
-                      </option>
-                    ))}
-                  </select>
-                </Row>
-                <Row label="Widget">
-                  <select
-                    value={layer.widget}
-                    onChange={(event) => onLayer({ widget: event.target.value as Widget })}
-                  >
-                    <option value="number">Big number</option>
-                    <option value="bar">Bar</option>
-                  </select>
-                </Row>
-              </>
-            ) : (
-              <>
-                <Row label="Source">
-                  <select
-                    value={layer.source}
-                    onChange={(event) =>
-                      onLayer({ source: event.target.value as Layer["source"] })
-                    }
-                  >
-                    <option value="static">Static text</option>
-                    <option value="clock">Clock (HH:MM)</option>
-                    <option value="date">Date</option>
-                  </select>
-                </Row>
-                {layer.source === "static" && (
-                  <Row label="Text">
-                    <input
-                      type="text"
-                      value={layer.text}
-                      onChange={(event) => onLayer({ text: event.target.value })}
-                    />
-                  </Row>
-                )}
-              </>
-            )}
+        <section className="field-group">
+          <h2 className="section-title">{layer.kind === "metric" ? "Sensor layer" : "Text layer"}</h2>
 
-            <div className="grid-2">
-              <Row label="X">
-                <NumberInput value={layer.x} onChange={(x) => onLayer({ x })} />
-              </Row>
-              <Row label="Y">
-                <NumberInput value={layer.y} onChange={(y) => onLayer({ y })} />
-              </Row>
-              <Row label="Width">
-                <NumberInput value={layer.w} min={1} onChange={(w) => onLayer({ w })} />
-              </Row>
-              <Row label="Height">
-                <NumberInput value={layer.h} min={1} onChange={(h) => onLayer({ h })} />
-              </Row>
-            </div>
+          {layer.kind === "metric" ? (
+            <>
+              <Field label="Shows">
+                <select
+                  value={layer.metric}
+                  onChange={(event) => {
+                    const metric = event.target.value as MetricKey;
+                    const meta = metricMeta(metric);
+                    onLayer({
+                      metric,
+                      unit: meta.unit,
+                      min_value: meta.min,
+                      max_value: meta.max,
+                      decimals: meta.decimals,
+                    });
+                  }}
+                >
+                  {METRICS.map((metric) => (
+                    <option key={metric.key} value={metric.key}>
+                      {metric.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Style">
+                <select
+                  value={layer.widget}
+                  onChange={(event) => onLayer({ widget: event.target.value as Widget })}
+                >
+                  <option value="number">Large number</option>
+                  <option value="bar">Progress bar</option>
+                </select>
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Shows">
+                <select
+                  value={layer.source}
+                  onChange={(event) => onLayer({ source: event.target.value as Layer["source"] })}
+                >
+                  <option value="static">Fixed text</option>
+                  <option value="clock">Time</option>
+                  <option value="date">Date</option>
+                </select>
+              </Field>
+              {layer.source === "static" && (
+                <Field label="Text">
+                  <input
+                    type="text"
+                    value={layer.text}
+                    onChange={(event) => onLayer({ text: event.target.value })}
+                  />
+                </Field>
+              )}
+            </>
+          )}
 
-            <Row label="Align">
-              <select
-                value={layer.align}
-                onChange={(event) => onLayer({ align: event.target.value as Align })}
-              >
-                <option value="left">Left</option>
-                <option value="center">Centre</option>
-                <option value="right">Right</option>
-              </select>
-            </Row>
+          <div className="field-grid">
+            <Field label="Left">
+              <NumberInput value={layer.x} onChange={(x) => onLayer({ x })} />
+            </Field>
+            <Field label="Top">
+              <NumberInput value={layer.y} onChange={(y) => onLayer({ y })} />
+            </Field>
+            <Field label="Width">
+              <NumberInput value={layer.w} min={1} onChange={(w) => onLayer({ w })} />
+            </Field>
+            <Field label="Height">
+              <NumberInput value={layer.h} min={1} onChange={(h) => onLayer({ h })} />
+            </Field>
+          </div>
 
-            <Row label="Colour">
-              <span className="colour-field">
+          <Field label="Align">
+            <select
+              value={layer.align}
+              onChange={(event) => onLayer({ align: event.target.value as Align })}
+            >
+              <option value="left">Left</option>
+              <option value="center">Centre</option>
+              <option value="right">Right</option>
+            </select>
+          </Field>
+
+          <Field label="Colour">
+            <span className="color-field">
+              <input
+                type="color"
+                value={layer.color}
+                onChange={(event) => onLayer({ color: event.target.value.toUpperCase() })}
+              />
+              <code>{layer.color}</code>
+            </span>
+          </Field>
+
+          {layer.kind === "metric" && layer.widget === "bar" && (
+            <Field label="Bar track">
+              <span className="color-field">
                 <input
                   type="color"
-                  value={layer.color}
-                  onChange={(event) => onLayer({ color: event.target.value.toUpperCase() })}
+                  value={layer.track_color}
+                  onChange={(event) => onLayer({ track_color: event.target.value.toUpperCase() })}
                 />
-                <code>{layer.color}</code>
+                <code>{layer.track_color}</code>
               </span>
-            </Row>
+            </Field>
+          )}
 
-            {layer.kind === "metric" && layer.widget === "bar" && (
-              <Row label="Track">
-                <span className="colour-field">
-                  <input
-                    type="color"
-                    value={layer.track_color}
-                    onChange={(event) =>
-                      onLayer({ track_color: event.target.value.toUpperCase() })
-                    }
-                  />
-                  <code>{layer.track_color}</code>
-                </span>
-              </Row>
+          <div className="field-grid">
+            <Field label="Text size">
+              <NumberInput value={layer.scale} min={1} max={8} onChange={(scale) => onLayer({ scale })} />
+            </Field>
+            <Field label="Decimals">
+              <NumberInput
+                value={layer.decimals}
+                min={0}
+                max={3}
+                onChange={(decimals) => onLayer({ decimals })}
+              />
+            </Field>
+            <Field label="Unit">
+              <input
+                type="text"
+                value={layer.unit}
+                onChange={(event) => onLayer({ unit: event.target.value })}
+              />
+            </Field>
+            {layer.kind === "metric" && (
+              <>
+                <Field label="Minimum">
+                  <NumberInput value={layer.min_value} onChange={(min_value) => onLayer({ min_value })} />
+                </Field>
+                <Field label="Maximum">
+                  <NumberInput value={layer.max_value} onChange={(max_value) => onLayer({ max_value })} />
+                </Field>
+              </>
             )}
-
-            <div className="grid-2">
-              <Row label="Text size">
-                <NumberInput value={layer.scale} min={1} max={8} onChange={(scale) => onLayer({ scale })} />
-              </Row>
-              <Row label="Decimals">
-                <NumberInput
-                  value={layer.decimals}
-                  min={0}
-                  max={3}
-                  onChange={(decimals) => onLayer({ decimals })}
-                />
-              </Row>
-              <Row label="Unit">
-                <input
-                  type="text"
-                  value={layer.unit}
-                  onChange={(event) => onLayer({ unit: event.target.value })}
-                />
-              </Row>
-              {layer.kind === "metric" && (
-                <>
-                  <Row label="Min">
-                    <NumberInput value={layer.min_value} onChange={(min_value) => onLayer({ min_value })} />
-                  </Row>
-                  <Row label="Max">
-                    <NumberInput value={layer.max_value} onChange={(max_value) => onLayer({ max_value })} />
-                  </Row>
-                </>
-              )}
-            </div>
           </div>
-        </>
+        </section>
       ) : (
-        <p className="empty">Select a layer on the canvas or in the list to edit it.</p>
+        <p className="empty-hint">
+          Select a layer on the panel or in the list to change its contents.
+        </p>
       )}
-    </section>
+    </div>
   );
 }

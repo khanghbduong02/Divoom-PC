@@ -15,6 +15,20 @@ interface Notice {
   hint?: string | null;
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  ok: "Connected",
+  token: "Needs token",
+  refused: "Nothing there",
+  timeout: "No answer",
+  network: "Unreachable",
+  device: "Error reply",
+  unknown: "Unknown",
+};
+
+function statusLabel(kind: string): string {
+  return STATUS_LABEL[kind] ?? kind;
+}
+
 function describe(error: unknown): Notice {
   if (error instanceof ApiFailure) {
     return { tone: "error", text: error.message, hint: error.hint };
@@ -62,8 +76,8 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
         tone: reply.cloud.length || reply.scan.length ? "ok" : "info",
         text:
           reply.cloud.length || reply.scan.length
-            ? "Found a device on the network — pick it below."
-            : "No device answered on this network. Enter the IP shown in the Divoom app.",
+            ? "Found a display on your network. Pick it below."
+            : "No display answered. Type the IP address shown in the Divoom app.",
       });
       setRaw(reply.errors.length ? reply.errors.join("\n") : null);
     } catch (error) {
@@ -76,7 +90,7 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
   const probe = async () => {
     const target = host.trim();
     if (!target) {
-      setNotice({ tone: "error", text: "Enter the device IP address first." });
+      setNotice({ tone: "error", text: "Enter the display's IP address first." });
       return;
     }
     setBusy("probe");
@@ -88,7 +102,7 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
       if (ok) {
         setNotice({
           tone: "ok",
-          text: `${ok.device_name ?? "Times Gate"} answered on port ${ok.port}.`,
+          text: `${ok.device_name ?? "Your display"} answered on port ${ok.port}.`,
         });
         setRaw(ok.raw);
       } else {
@@ -96,7 +110,11 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
           tone: "error",
           text: reply.outcomes.map((outcome) => `${outcome.port}: ${outcome.message}`).join(" · "),
         });
-        setRaw(reply.outcomes.map((outcome) => `port ${outcome.port} (${outcome.protocol})\n${outcome.raw ?? "no reply"}`).join("\n\n"));
+        setRaw(
+          reply.outcomes
+            .map((outcome) => `port ${outcome.port} (${outcome.protocol})\n${outcome.raw ?? "no reply"}`)
+            .join("\n\n"),
+        );
       }
     } catch (error) {
       setNotice(describe(error));
@@ -117,7 +135,7 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
       });
       setNotice({
         tone: "ok",
-        text: `Saved ${reply.device.host}:${reply.device.port}. Now send a test tile.`,
+        text: `Saved ${reply.device.host}:${reply.device.port}. Send a test image in step 4.`,
       });
       setRaw(JSON.stringify(reply.reply, null, 2));
       onChanged();
@@ -136,7 +154,7 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
       setResults(reply.results);
       setNotice({
         tone: "ok",
-        text: `Test tile sent to panel ${panel + 1}. It should show a framed number on the device.`,
+        text: `Test image sent to panel ${panel + 1}. It should show a framed number.`,
       });
       setRaw(JSON.stringify(reply.results, null, 2));
       onChanged();
@@ -148,23 +166,26 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
   };
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true">
-      <div className="wizard">
-        <header>
-          <h2>Connect your Times Gate</h2>
-          <button type="button" className="ghost" onClick={onClose}>
+    <div className="overlay" role="dialog" aria-modal="true" aria-label="Connect a display">
+      <div className="modal">
+        <div className="modal-head">
+          <div>
+            <h2>Connect a display</h2>
+            <p className="hint">
+              The display must be on the same Wi-Fi as this computer, and it needs to have
+              been online once since it was last powered on.
+            </p>
+          </div>
+          <button type="button" className="button-quiet" onClick={onClose}>
             Close
           </button>
-        </header>
+        </div>
 
-        <ol className="steps">
-          <li>
-            <h3>1 · Find the device</h3>
-            <p className="help">
-              Same Wi-Fi as this PC. The device needs internet once after booting before its
-              local API answers.
-            </p>
-            <div className="inline">
+        <div className="steps">
+          <section className="step">
+            <h3>1. Find the display</h3>
+            <p className="hint">Scan your network, or type the IP the Divoom app shows.</p>
+            <div className="inline-row">
               <input
                 type="text"
                 placeholder="192.168.1.42"
@@ -176,82 +197,72 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
               </button>
             </div>
             {found.length > 0 && (
-              <ul className="found">
+              <ul className="found-list">
                 {found.map((entry) => (
                   <li key={entry.ip}>
-                    <button type="button" onClick={() => setHost(entry.ip)}>
-                      {entry.name} · {entry.ip}
+                    <button type="button" className="button-small" onClick={() => setHost(entry.ip)}>
+                      {entry.name} — {entry.ip}
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-          </li>
+          </section>
 
-          <li>
-            <h3>2 · Probe both hardware revisions</h3>
-            <p className="help">
-              HW 400 answers on port 80, HW 402 on port 9000. Probing tells us which one your
-              unit is without guessing.
+          <section className="step">
+            <h3>2. Check both connection types</h3>
+            <p className="hint">
+              Times Gate units use one of two ports depending on the hardware revision. This
+              checks both so you don't have to guess.
             </p>
-            <div className="inline">
+            <div className="inline-row">
               <button type="button" onClick={probe} disabled={busy !== null}>
-                {busy === "probe" ? "Probing…" : "Probe ports 80 and 9000"}
+                {busy === "probe" ? "Checking…" : "Check port 80 and 9000"}
               </button>
             </div>
 
             {outcomes.length > 0 && (
-              <table className="probe-table">
-                <thead>
-                  <tr>
-                    <th>Port</th>
-                    <th>Result</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {outcomes.map((outcome) => (
-                    <tr key={`${outcome.port}-${outcome.protocol}`}>
-                      <td>{outcome.port}</td>
-                      <td>
-                        <span className={`badge badge-${outcome.kind}`}>{outcome.kind}</span>
-                        <span className="probe-message">{outcome.message}</span>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => connect(outcome)}
-                          disabled={busy !== null || !(outcome.ok || outcome.kind === "token")}
-                        >
-                          Use this port
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ul className="probe-list">
+                {outcomes.map((outcome) => (
+                  <li key={`${outcome.port}-${outcome.protocol}`} className="probe-row">
+                    <span className="probe-port">Port {outcome.port}</span>
+                    <span className={`status-chip status-${outcome.kind}`}>
+                      {statusLabel(outcome.kind)}
+                    </span>
+                    <span className="probe-message">{outcome.message}</span>
+                    <button
+                      type="button"
+                      className="button-small"
+                      onClick={() => connect(outcome)}
+                      disabled={busy !== null || !(outcome.ok || outcome.kind === "token")}
+                    >
+                      Use this
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
-          </li>
+          </section>
 
-          <li>
-            <h3>3 · LocalToken</h3>
-            <p className="help">
-              Newer firmware rejects local calls without it. Open the Divoom app → device
-              settings → copy the token number. Leave empty if your unit does not need one.
+          <section className="step">
+            <h3>3. Access token (only if your unit asks for one)</h3>
+            <p className="hint">
+              Newer firmware rejects local requests without it. In the Divoom app, open the
+              display's settings and copy the token number. Otherwise leave this empty.
             </p>
             <input
               type="text"
               inputMode="numeric"
-              placeholder="e.g. 123456789"
+              placeholder="Optional"
               value={tokenInput}
               onChange={(event) => setTokenInput(event.target.value)}
             />
-          </li>
+          </section>
 
-          <li>
-            <h3>4 · Prove it on the hardware</h3>
-            <p className="help">Send a numbered tile to one panel. Success means a coloured square appears.</p>
-            <div className="inline">
+          <section className="step">
+            <h3>4. Send a test image</h3>
+            <p className="hint">A framed number should appear on the panel you choose.</p>
+            <div className="inline-row">
               <select value={panel} onChange={(event) => setPanel(Number(event.target.value))}>
                 {[0, 1, 2, 3, 4].map((index) => (
                   <option key={index} value={index}>
@@ -259,17 +270,22 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={sendTest} disabled={busy !== null || !device?.configured}>
-                {busy === "test" ? "Sending…" : "Send test tile"}
+              <button
+                type="button"
+                onClick={sendTest}
+                disabled={busy !== null || !device?.configured}
+              >
+                {busy === "test" ? "Sending…" : "Send test image"}
               </button>
             </div>
             {results && (
-              <p className="help">
-                {results.length} panel(s) accepted · {results.reduce((sum, item) => sum + item.bytes, 0)} bytes
+              <p className="hint">
+                Accepted by {results.length} panel(s) ·{" "}
+                {results.reduce((sum, item) => sum + item.bytes, 0)} bytes sent
               </p>
             )}
-          </li>
-        </ol>
+          </section>
+        </div>
 
         {notice && (
           <div className={`notice notice-${notice.tone}`}>
@@ -278,14 +294,17 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
           </div>
         )}
 
-        {raw && <pre className="raw">{raw}</pre>}
+        {raw && (
+          <details className="raw-details">
+            <summary>Show the display's reply</summary>
+            <pre>{raw}</pre>
+          </details>
+        )}
 
-        <footer className="notes">
-          <p>
-            Only one controller per device: close the Divoom app while this is pushing, or the
-            panels will flicker between two writers.
-          </p>
-        </footer>
+        <p className="modal-footnote">
+          Tip: close the Divoom phone app while you use this editor. Two apps sending to the
+          same display makes the panels flicker.
+        </p>
       </div>
     </div>
   );

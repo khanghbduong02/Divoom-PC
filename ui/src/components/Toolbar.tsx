@@ -1,4 +1,5 @@
 import type { DeviceSummary, PresetMeta, Theme, WireStatus } from "../types";
+import { DisplayIcon, LogoIcon, SendIcon } from "./icons";
 
 interface Props {
   theme: Theme | null;
@@ -15,9 +16,9 @@ interface Props {
 
 const SAVE_LABEL: Record<Props["saveState"], string> = {
   idle: "",
-  saving: "saving…",
-  saved: "saved",
-  error: "save failed",
+  saving: "Saving…",
+  saved: "Saved",
+  error: "Not saved",
 };
 
 export default function Toolbar({
@@ -35,15 +36,16 @@ export default function Toolbar({
   const presetId = theme?.id.startsWith("preset-") ? theme.id.replace("preset-", "") : "";
 
   return (
-    <header className="toolbar">
-      <div className="brand">
-        GATE<span>THEME STUDIO</span>
+    <header className="topbar">
+      <div className="app-name">
+        <LogoIcon />
+        <h1>Gate Theme Studio</h1>
       </div>
 
-      <label className="preset-picker">
-        <span>Preset</span>
+      <label className="theme-select">
+        <span>Theme</span>
         <select value={presetId} onChange={(event) => onPreset(event.target.value)}>
-          <option value="">Custom</option>
+          <option value="">Custom layout</option>
           {presets.map((preset) => (
             <option key={preset.id} value={preset.id}>
               {preset.name}
@@ -52,25 +54,23 @@ export default function Toolbar({
         </select>
       </label>
 
-      <button type="button" className="ghost device-chip" onClick={onWizard}>
-        <span className={`dot ${device?.configured ? "dot-on" : "dot-off"}`} />
-        {device?.configured
-          ? `${device.name ?? "Times Gate"} · ${device.host}:${device.port}`
-          : "Connect device"}
+      <button type="button" className="button-quiet device-button" onClick={onWizard}>
+        <DisplayIcon />
+        <span>{device?.configured ? device.name ?? device.host : "Connect a display"}</span>
       </button>
 
-      <span className={`wire wire-${wire}`}>
-        {wire === "live" ? "live preview" : wire}
+      <div className="topbar-spacer" />
+
+      <span className={`live-state live-${wire}`}>
+        {wire === "live" ? "Preview updating" : wire === "connecting" ? "Starting preview…" : "Preview offline"}
       </span>
-
-      <div className="spacer" />
-
       <span className={`save-state save-${saveState}`}>{SAVE_LABEL[saveState]}</span>
-      <button type="button" className="ghost" onClick={onDiagnostics}>
-        Diagnostics
+      <button type="button" className="button-quiet" onClick={onDiagnostics}>
+        Troubleshooting
       </button>
-      <button type="button" className="primary" onClick={onSend} disabled={sending}>
-        {sending ? "Sending…" : "Send to device"}
+      <button type="button" className="button-primary" onClick={onSend} disabled={sending}>
+        <SendIcon />
+        {sending ? "Sending…" : "Send to display"}
       </button>
     </header>
   );

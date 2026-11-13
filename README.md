@@ -53,7 +53,8 @@ Useful flags: `--port`, `--no-browser`, `--no-discovery`, `--data-dir <path>`, a
 ## First run in 60 seconds
 
 1. Open the URL the agent printed.
-2. Pick a preset in the toolbar — *NVIDIA HUD*, *Minimal Mono* or *Retro Terminal*.
+2. Pick a theme in the toolbar — *NVIDIA HUD*, *Minimal Mono* or *Retro Terminal* —
+   or choose one from the cards shown on an empty panel.
 3. Click **Connect device** and follow the wizard:
    - **Scan network**, or type the IP the Divoom app shows for the device.
    - **Probe ports 80 and 9000** — the wizard reports which hardware revision
@@ -68,8 +69,8 @@ Useful flags: `--port`, `--no-browser`, `--no-discovery`, `--data-dir <path>`, a
 - **Panel rail** — the five panels, with live thumbnails rendered by the agent.
 - **Stage** — the real 128×128 geometry at 4×. Drag a layer's box to move it; it snaps
   to whole pixels.
-- **Layers** — any number per panel. `+ Metric` adds a sensor readout, `+ Text` adds a
-  label, clock or date. Reorder, hide, delete from the list.
+- **Layers** — any number per panel. **Add metric** inserts a sensor readout, **Add text**
+  inserts a label, clock or date. Reorder, hide or delete from the list.
 - **Inspector** — per panel: background colour or image (fit / crop / stretch, dim),
   accent colour. Per layer: metric, widget (big number or bar), position, size, colour,
   text size, decimals, unit, gauge min/max, alignment.
@@ -87,7 +88,7 @@ The three failure modes are reported separately, because each has a different fi
 | `timeout` | No reply | Wrong IP, other network, device asleep, or it never got internet after boot |
 | `token` | Device answered, rejected the call | Add/correct the LocalToken |
 
-Whatever the device replied is shown verbatim in the wizard and in **Diagnostics**.
+Whatever the device replied is shown verbatim in the wizard and in **Troubleshooting**.
 
 ## Metrics
 

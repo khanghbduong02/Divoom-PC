@@ -17,6 +17,8 @@ function clamp(value: number): number {
 }
 
 export default function Stage({ panel, preview, selectedLayerId, onSelect, onLayerChange }: Props) {
+  const selected = panel.layers.find((layer) => layer.id === selectedLayerId) ?? null;
+
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>, layer: Layer) => {
     event.preventDefault();
     event.stopPropagation();
@@ -37,16 +39,16 @@ export default function Stage({ panel, preview, selectedLayerId, onSelect, onLay
   };
 
   return (
-    <div className="stage-wrap">
+    <div className="canvas-area">
       <div
-        className="stage"
+        className="canvas"
         style={{ width: PANEL_SIZE * SCALE, height: PANEL_SIZE * SCALE }}
         onPointerDown={() => onSelect(null)}
       >
         {preview ? (
-          <img className="stage-image" src={preview} alt="Panel preview" draggable={false} />
+          <img className="canvas-image" src={preview} alt="Panel preview" draggable={false} />
         ) : (
-          <div className="stage-empty">waiting for preview…</div>
+          <div className="canvas-placeholder">Waiting for the preview…</div>
         )}
 
         {panel.layers.map((layer) => {
@@ -70,9 +72,15 @@ export default function Stage({ panel, preview, selectedLayerId, onSelect, onLay
           );
         })}
       </div>
-      <p className="stage-hint">
-        128 × 128 device pixels · drag a box to move it (snaps to whole pixels)
-      </p>
+
+      <div className="canvas-caption">
+        <span>128 × 128 pixels</span>
+        <span>
+          {selected
+            ? `Selected at x ${selected.x}, y ${selected.y}`
+            : "Drag a layer to move it"}
+        </span>
+      </div>
     </div>
   );
 }

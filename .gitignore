@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
+
+# Node / UI
+node_modules/
+ui/dist/
+server/gate_studio/static/
+
+# Local runtime data
+*.log
+.DS_Store
+Thumbs.db

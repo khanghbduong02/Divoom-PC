@@ -97,6 +97,8 @@ export const api = {
       { method: "PUT", body: JSON.stringify(patch) },
     ),
   getSystem: () => request<SystemInfo>("/api/system"),
+  installSensors: () =>
+    request<{ started: boolean }>("/api/system/sensors/install", { method: "POST" }),
   setAutostart: (enabled: boolean) =>
     request<{ autostart: boolean; supported: boolean }>("/api/system/autostart", {
       method: "POST",

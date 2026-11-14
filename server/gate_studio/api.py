@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import subprocess
 import sys
 import time
 import uuid
@@ -30,6 +31,8 @@ from .render.renderer import render_test_panel
 from .sensors import SensorCollector
 
 STATIC_DIR = Path(__file__).parent / "static"
+#: optional Windows sensor helper shipped next to the source checkout
+SENSOR_SETUP_SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "setup-sensors.ps1"
 
 
 class AppState:
@@ -347,6 +350,26 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             "last_push_at": state.last_push_at,
             "skipped_frames": state.skipped_frames,
         }
+
+    @app.post("/api/system/sensors/install")
+    def install_sensor_helper() -> dict[str, object]:
+        """Ask Windows (with a normal UAC prompt) to install the CPU sensor helper."""
+        if sys.platform != "win32":
+            raise HTTPException(status_code=400, detail="CPU temperature sensors are Windows-only.")
+        if not SENSOR_SETUP_SCRIPT.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="The sensor helper is not available in this build — see README → Metrics.",
+            )
+        command = (
+            "Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList "
+            f"'-NoProfile','-ExecutionPolicy','Bypass','-File','{SENSOR_SETUP_SCRIPT}'"
+        )
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return {"started": True}
 
     @app.post("/api/system/autostart")
     def set_autostart_state(body: AutostartRequest) -> dict[str, object]:

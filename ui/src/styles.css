@@ -1099,6 +1099,17 @@ code {
   color: var(--ink-soft);
 }
 
+.sensor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.sensor-actions a {
+  text-decoration: none;
+}
+
 .download-link {
   display: inline-flex;
   align-items: center;

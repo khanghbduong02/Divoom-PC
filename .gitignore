@@ -13,7 +13,9 @@ ui/dist/
 ui/*.tsbuildinfo
 server/gate_studio/static/
 
-# Local runtime data
+# Local runtime data and bundled sensor helper (binaries are downloaded)
+tools/LibreHardwareMonitor/
+tools/lhm.zip
 *.log
 .DS_Store
 Thumbs.db

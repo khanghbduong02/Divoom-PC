@@ -29,6 +29,8 @@ export default function Diagnostics({ open, onClose }: Props) {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [enabling, setEnabling] = useState(false);
+  const [enableMessage, setEnableMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +49,30 @@ export default function Diagnostics({ open, onClose }: Props) {
       void load();
     }
   }, [open, load]);
+
+  const enableSensors = async () => {
+    setEnabling(true);
+    setEnableMessage("Approve the Windows prompt, then wait a few seconds…");
+    try {
+      await api.installSensors();
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const next = await api.diagnostics();
+        setReport(next);
+        if (next.sensors.cpu_temp !== null) {
+          setEnableMessage("CPU temperature is live.");
+          return;
+        }
+      }
+      setEnableMessage(
+        "Still no reading. Open tools/setup-sensors.log in the project folder for the reason, then press Refresh.",
+      );
+    } catch (caught) {
+      setEnableMessage(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setEnabling(false);
+    }
+  };
 
   if (!open) {
     return null;
@@ -111,6 +137,11 @@ export default function Diagnostics({ open, onClose }: Props) {
 
           <section>
             <h3>Sensors</h3>
+            {report.hardware.cpu_temp_source && (
+              <p className="hint" style={{ marginBottom: 8 }}>
+                CPU temperature source: {report.hardware.cpu_temp_source}.
+              </p>
+            )}
             <dl className="facts">
               {Object.entries(report.sensors).map(([key, value]) => (
                 <div key={key} className="fact-row">
@@ -124,14 +155,25 @@ export default function Diagnostics({ open, onClose }: Props) {
                 <p className="hint" style={{ marginTop: 8 }}>
                   {report.hardware.cpu_temp_hint}
                 </p>
-                <a
-                  className="button-small download-link"
-                  href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Get LibreHardwareMonitor
-                </a>
+                <div className="sensor-actions">
+                  <button
+                    type="button"
+                    className="button-small"
+                    disabled={enabling}
+                    onClick={() => void enableSensors()}
+                  >
+                    {enabling ? "Waiting for Windows…" : "Enable CPU temperature"}
+                  </button>
+                  <a
+                    className="hint"
+                    href="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Download manually
+                  </a>
+                </div>
+                {enableMessage && <p className="hint">{enableMessage}</p>}
               </>
             )}
             {report.hardware.cpu_temp_source && (

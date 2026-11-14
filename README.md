@@ -45,6 +45,9 @@ yourself with the steps below).
 7. **Apply when you like it.** Edits are saved in the editor but do not touch the Gate
    until you press **Apply** in the right panel (that screen only) or **Send all** in the
    top bar (all five). The design already on the Gate keeps its sensor readings live.
+   Use **Save theme** in the top bar to keep all five panels, or **Save panel** in the
+   inspector to keep one screen, then load either from its saved list later. Loading a
+   saved design only changes the editor; press **Apply** or **Send all** to send it.
 
 The app **starts with Windows** and keeps the display live. Closing the browser tab does
 not stop it. To stop it for good, right-click the tray icon and choose **Quit Gate Theme
@@ -210,10 +213,12 @@ fresh machine shows a SmartScreen prompt.
   now**, a **progress bar**, or a **line graph** of the past 5 minutes to 3 hours
   (history builds while the app runs).
 - **Inspector** — per panel: background colour or image (fit / crop / stretch, dim),
-  accent colour, **Theme for this panel only**, **Pause updates for this screen**,
-  **Remove all layers from this panel**. Per layer: metric, widget (big number or bar),
-  position, size, colour, text sizing, decimals, unit, gauge min/max, alignment.
-- **Toolbar** — choose a theme and press **All panels**; **Send all** forces an immediate
+  accent colour, **Theme for this panel only**, **Save panel** / **Saved panel designs**,
+  **Pause updates for this screen**, **Remove all layers from this panel**. Per layer:
+  metric, widget (big number or bar), position, size, colour, text sizing, decimals,
+  unit, gauge min/max, alignment.
+- **Toolbar** — choose a built-in or saved theme and press **Apply**; **Save theme** keeps
+  the current five-panel draft for reuse; **Send all** forces an immediate
   update of all five panels; **Help** has the end-user guide; **Settings** controls
   updates, Divoom-app hand-off, autostart, network access and whether temperatures read
   **°C or °F** (all panels); **Troubleshooting** shows the last device reply verbatim.
@@ -280,6 +285,7 @@ One folder (override with `--data-dir` or `GATE_STUDIO_DATA_DIR`):
 ```
 %APPDATA%\GateThemeStudio\      (macOS: ~/Library/Application Support/GateThemeStudio)
 ├── config.json                 device + settings + current theme (+ schema version)
+├── saved.json                  named full-theme and single-panel saves
 ├── token                       generated on first run
 ├── agent.log                   log of the last runs
 └── media/                      uploaded background images
@@ -321,6 +327,7 @@ server/gate_studio/
 ├── desktop.py        tray icon + start-with-Windows helpers
 ├── models.py         theme / panel / layer / device schema
 ├── presets.py        preset loader + presets/*.json
+├── library.py        named user saves (saved.json)
 ├── device/           transport, error taxonomy, discovery
 ├── render/           font, widgets, backgrounds, renderer
 └── sensors/          psutil collector, NVML + LibreHardwareMonitor

@@ -145,6 +145,18 @@ export interface PresetMeta {
   description: string;
 }
 
+export interface SavedItem {
+  id: string;
+  name: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SavedLibrary {
+  themes: SavedItem[];
+  panels: SavedItem[];
+}
+
 export interface ProbeOutcome {
   host: string;
   port: number;

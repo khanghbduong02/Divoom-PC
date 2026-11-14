@@ -7,6 +7,7 @@ import type {
   Panel,
   PausedPanel,
   PresetMeta,
+  SavedLibrary,
   SensorValues,
   Theme,
   WireStatus,
@@ -21,8 +22,13 @@ import DeviceWizard from "./components/DeviceWizard";
 import Diagnostics from "./components/Diagnostics";
 import Settings from "./components/Settings";
 import Help from "./components/Help";
+import SaveDialog from "./components/SaveDialog";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+type SaveTarget =
+  | { kind: "theme"; defaultName: string }
+  | { kind: "panel"; panel: number; defaultName: string };
 
 interface Notice {
   tone: "ok" | "error" | "info";
@@ -33,6 +39,10 @@ interface Notice {
 
 function newId(): string {
   return Math.random().toString(16).slice(2, 10);
+}
+
+function saveName(value: string): string {
+  return value.trim().slice(0, 80);
 }
 
 function makeMetricLayer(metric: MetricKey, stacked: number): Layer {
@@ -114,6 +124,9 @@ function noticeFrom(error: unknown): Notice {
 export default function App() {
   const [theme, setTheme] = useState<Theme | null>(null);
   const [presets, setPresets] = useState<PresetMeta[]>([]);
+  const [library, setLibrary] = useState<SavedLibrary>({ themes: [], panels: [] });
+  const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
+  const [savingDesign, setSavingDesign] = useState(false);
   const [device, setDevice] = useState<DeviceSummary | null>(null);
   const [previews, setPreviews] = useState<string[]>([]);
   const [sensors, setSensors] = useState<SensorValues>({});
@@ -182,10 +195,15 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const [themeReply, presetReply] = await Promise.all([api.getTheme(), api.getPresets()]);
+        const [themeReply, presetReply, libraryReply] = await Promise.all([
+          api.getTheme(),
+          api.getPresets(),
+          api.getLibrary(),
+        ]);
         if (cancelled) return;
         setTheme(themeReply.theme);
         setPresets(presetReply.presets);
+        setLibrary(libraryReply);
         await loadConfig();
       } catch (error) {
         if (!cancelled) {
@@ -336,6 +354,79 @@ export default function App() {
     });
   };
 
+  const loadSavedTheme = async (savedId: string) => {
+    try {
+      const reply = await api.applySavedTheme(savedId);
+      setTheme(reply.theme);
+      setSelectedLayerId(null);
+      setNotice({
+        tone: "info",
+        text: `Loaded “${reply.theme.name}” into the editor. Press “Send all” to put it on the Gate.`,
+      });
+    } catch (error) {
+      setNotice(noticeFrom(error));
+    }
+  };
+
+  const loadSavedPanel = async (savedId: string) => {
+    try {
+      const reply = await api.applySavedPanel(savedId, selectedPanel);
+      setTheme(reply.theme);
+      setSelectedLayerId(null);
+      setNotice({
+        tone: "info",
+        text: `Loaded a saved panel into panel ${selectedPanel + 1}. Press Apply above to send it; other panels are unchanged.`,
+      });
+    } catch (error) {
+      setNotice(noticeFrom(error));
+    }
+  };
+
+  const beginSaveTheme = () => {
+    if (!theme) return;
+    setSaveTarget({
+      kind: "theme",
+      defaultName: saveName(theme.name === "Untitled" ? "My theme" : theme.name),
+    });
+  };
+
+  const beginSavePanel = () => {
+    setSaveTarget({
+      kind: "panel",
+      panel: selectedPanel,
+      defaultName: saveName(
+        theme
+          ? `${theme.name === "Untitled" ? "My theme" : theme.name} panel ${selectedPanel + 1}`
+          : `Panel ${selectedPanel + 1}`,
+      ),
+    });
+  };
+
+  const saveDesign = async (name: string) => {
+    if (!saveTarget) return;
+    setSavingDesign(true);
+    try {
+      const reply =
+        saveTarget.kind === "theme"
+          ? await api.saveTheme(name)
+          : await api.savePanel(saveTarget.panel, name);
+      setLibrary(reply.library);
+      setNotice({
+        tone: "ok",
+        text:
+          saveTarget.kind === "theme"
+            ? `Saved theme “${name}”. Choose it under Saved themes in the top bar.`
+            : `Saved panel ${saveTarget.panel + 1} as “${name}”. Choose it from Saved panels in the inspector.`,
+      });
+      setSaveTarget(null);
+    } catch (error) {
+      setNotice(noticeFrom(error));
+      setSaveTarget(null);
+    } finally {
+      setSavingDesign(false);
+    }
+  };
+
   const applyPreset = async (presetId: string, panelIndex?: number) => {
     if (!presetId) return;
     try {
@@ -476,11 +567,14 @@ export default function App() {
     <div className="app">
       <Toolbar
         presets={presets}
+        savedThemes={library.themes}
         device={device}
         wire={wire}
         sending={sending}
         saveState={saveState}
         onPreset={(id) => void applyPreset(id)}
+        onSavedTheme={(id) => void loadSavedTheme(id)}
+        onSaveTheme={beginSaveTheme}
         onSend={() => void send()}
         onWizard={() => setWizardOpen(true)}
         onDiagnostics={() => setDiagnosticsOpen(true)}
@@ -589,6 +683,7 @@ export default function App() {
             panelIndex={selectedPanel}
             layer={selectedLayer}
             presets={presets}
+            savedPanels={library.panels}
             uploading={uploading}
             applying={applyingPanel}
             pausedPanel={pausedPanels.find((item) => item.panel === selectedPanel) ?? null}
@@ -608,6 +703,8 @@ export default function App() {
             }
             onUpload={(file) => void upload(file)}
             onApplyPanelPreset={(presetId) => void applyPreset(presetId, selectedPanel)}
+            onSavedPanel={(savedId) => void loadSavedPanel(savedId)}
+            onSavePanel={beginSavePanel}
             onClearLayers={clearLayers}
           />
         </aside>
@@ -628,6 +725,21 @@ export default function App() {
         }}
       />
       <Help open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <SaveDialog
+        open={saveTarget !== null}
+        title={
+          saveTarget?.kind === "theme" ? "Save theme" : `Save panel ${(saveTarget?.panel ?? 0) + 1}`
+        }
+        hint={
+          saveTarget?.kind === "theme"
+            ? "Keeps all five panels as a reusable theme on this PC."
+            : "Keeps this screen as a reusable panel design on this PC."
+        }
+        defaultName={saveTarget?.defaultName ?? ""}
+        busy={savingDesign}
+        onClose={() => !savingDesign && setSaveTarget(null)}
+        onSave={(name) => void saveDesign(name)}
+      />
     </div>
   );
 }

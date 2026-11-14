@@ -35,6 +35,7 @@ from .device import (
     fetch_snapshot,
     probe_host,
 )
+from .library import SavedLibrary
 from .models import AppConfig, AppSettings, DeviceConfig, PausedPanel, Theme
 from .presets import list_presets, load_preset
 from .render import encode_jpeg, encode_png, render_all
@@ -60,6 +61,7 @@ class AppState:
 
     def __init__(self, store: ConfigStore, collector: SensorCollector | None = None) -> None:
         self.store = store
+        self.library = SavedLibrary(store.data_dir)
         self.config: AppConfig = store.load()
         #: what the panels currently show; edits only replace it on Apply/Send
         self.applied_theme: Theme = (self.config.applied_theme or self.config.theme).model_copy(
@@ -331,6 +333,19 @@ class PanelPauseRequest(BaseModel):
     paused: bool = True
     source: Literal["external", "manual"] = "manual"
     reason: str = Field(default="", max_length=300)
+
+
+class SaveThemeRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class SavePanelRequest(BaseModel):
+    panel: int = Field(ge=0, le=4)
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ApplySavedPanelRequest(BaseModel):
+    panel: int = Field(ge=0, le=4)
 
 
 class AutostartRequest(BaseModel):
@@ -754,6 +769,58 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             state.config.theme = _theme_with_media(merged, store)
         else:
             state.config.theme = _theme_with_media(preset, store)
+        state.save()
+        return {"theme": state.config.theme.model_dump(mode="json")}
+
+    # -- saved library --------------------------------------------------
+    @app.get("/api/library")
+    def get_library() -> dict[str, object]:
+        return state.library.list()
+
+    @app.post("/api/library/themes")
+    def save_library_theme(body: SaveThemeRequest) -> dict[str, object]:
+        try:
+            item = state.library.save_theme(body.name, state.config.theme)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"item": item, "library": state.library.list()}
+
+    @app.post("/api/library/panels")
+    def save_library_panel(body: SavePanelRequest) -> dict[str, object]:
+        panel = state.config.theme.panels[body.panel]
+        try:
+            item = state.library.save_panel(body.name, panel)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"item": item, "library": state.library.list()}
+
+    @app.post("/api/library/themes/{saved_id}/apply")
+    def apply_saved_theme(saved_id: str) -> dict[str, object]:
+        try:
+            saved = state.library.get_theme(saved_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="saved theme not found") from exc
+        theme = saved.theme.model_copy(deep=True)
+        theme.id = uuid.uuid4().hex[:12]
+        theme.name = saved.name
+        state.config.theme = _theme_with_media(theme, store)
+        state.save()
+        return {"theme": state.config.theme.model_dump(mode="json")}
+
+    @app.post("/api/library/panels/{saved_id}/apply")
+    def apply_saved_panel(
+        saved_id: str, body: ApplySavedPanelRequest
+    ) -> dict[str, object]:
+        try:
+            saved = state.library.get_panel(saved_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="saved panel not found") from exc
+        panels = list(state.config.theme.panels)
+        panels[body.panel] = saved.panel.model_copy(deep=True)
+        merged = state.config.theme.model_copy(
+            update={"panels": panels, "id": uuid.uuid4().hex[:12]}
+        )
+        state.config.theme = _theme_with_media(merged, store)
         state.save()
         return {"theme": state.config.theme.model_dump(mode="json")}
 

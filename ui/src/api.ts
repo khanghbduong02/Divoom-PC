@@ -3,6 +3,8 @@ import type {
   PausedPanel,
   PresetMeta,
   ProbeOutcome,
+  SavedItem,
+  SavedLibrary,
   SendResult,
   SensorValues,
   Settings,
@@ -87,6 +89,24 @@ export const api = {
     request<{ theme: Theme }>(`/api/presets/${id}/apply`, {
       method: "POST",
       body: JSON.stringify({ panel: panel ?? null }),
+    }),
+  getLibrary: () => request<SavedLibrary>("/api/library"),
+  saveTheme: (name: string) =>
+    request<{ item: SavedItem; library: SavedLibrary }>("/api/library/themes", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  savePanel: (panel: number, name: string) =>
+    request<{ item: SavedItem; library: SavedLibrary }>("/api/library/panels", {
+      method: "POST",
+      body: JSON.stringify({ panel, name }),
+    }),
+  applySavedTheme: (id: string) =>
+    request<{ theme: Theme }>(`/api/library/themes/${id}/apply`, { method: "POST" }),
+  applySavedPanel: (id: string, panel: number) =>
+    request<{ theme: Theme }>(`/api/library/panels/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ panel }),
     }),
   getConfig: () =>
     request<{ device: DeviceSummary; settings: Settings; data_dir: string; media_dir: string }>(

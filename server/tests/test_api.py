@@ -13,6 +13,7 @@ from PIL import Image
 from gate_studio.api import create_app
 from gate_studio.config import ConfigStore
 from gate_studio.device.external import ExternalSnapshot
+from gate_studio.library import SavedLibrary
 from gate_studio.models import Layer
 
 
@@ -193,6 +194,67 @@ def test_external_watch_settings_round_trip(client: TestClient) -> None:
     stored = client.get("/api/config").json()["settings"]
     assert stored["external_watch"] is False
     assert stored["external_check_interval"] == 12
+
+
+def test_saved_theme_round_trip(client: TestClient, store: ConfigStore) -> None:
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["background"]["color"] = "#ABCDEF"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    saved = client.post("/api/library/themes", json={"name": "My desk"})
+    assert saved.status_code == 200
+    item = saved.json()["item"]
+    assert item["name"] == "My desk"
+    assert saved.json()["library"]["themes"][0]["id"] == item["id"]
+    assert SavedLibrary(store.data_dir).list()["themes"][0]["name"] == "My desk"
+
+    changed = client.get("/api/theme").json()["theme"]
+    changed["panels"][0]["background"]["color"] = "#000000"
+    assert client.put("/api/theme", json=changed).status_code == 200
+
+    applied = client.post(f"/api/library/themes/{item['id']}/apply")
+    assert applied.status_code == 200
+    assert applied.json()["theme"]["panels"][0]["background"]["color"] == "#ABCDEF"
+    assert applied.json()["theme"]["name"] == "My desk"
+    assert store.config_path.exists()
+
+
+def test_saved_panel_replaces_only_that_panel(client: TestClient) -> None:
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][1]["background"]["color"] = "#123456"
+    theme["panels"][0]["background"]["color"] = "#654321"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    saved = client.post(
+        "/api/library/panels", json={"panel": 1, "name": "My sensor tile"}
+    )
+    assert saved.status_code == 200
+    item = saved.json()["item"]
+
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][1]["background"]["color"] = "#FFFFFF"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    applied = client.post(
+        f"/api/library/panels/{item['id']}/apply", json={"panel": 1}
+    )
+    assert applied.status_code == 200
+    stored = applied.json()["theme"]
+    assert stored["panels"][1]["background"]["color"] == "#123456"
+    assert stored["panels"][0]["background"]["color"] == "#654321"
+
+
+def test_saved_names_update_in_place(client: TestClient) -> None:
+    client.post("/api/library/themes", json={"name": "Desk"})
+    client.post("/api/library/themes", json={"name": "Desk"})
+    library = client.get("/api/library").json()
+    assert [item["name"] for item in library["themes"]].count("Desk") == 1
+
+
+def test_saved_library_validates_names_and_ids(client: TestClient) -> None:
+    assert client.post("/api/library/themes", json={"name": "  "}).status_code == 422
+    assert client.post("/api/library/themes/nope/apply").status_code == 404
+    assert client.post("/api/library/panels/nope/apply", json={"panel": 0}).status_code == 404
 
 
 def test_media_upload_then_serve(client: TestClient) -> None:

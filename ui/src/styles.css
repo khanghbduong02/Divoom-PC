@@ -942,6 +942,12 @@ code {
   flex: none;
 }
 
+.inspector-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1039,6 +1045,23 @@ code {
   border-radius: 10px;
   padding: 20px 22px;
   box-shadow: 0 18px 48px rgba(36, 38, 42, 0.2);
+}
+
+.save-modal {
+  width: min(430px, 100%);
+}
+
+.save-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .modal-head {

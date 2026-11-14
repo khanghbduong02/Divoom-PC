@@ -1,14 +1,17 @@
 import { useState } from "react";
-import type { DeviceSummary, PresetMeta, WireStatus } from "../types";
+import type { DeviceSummary, PresetMeta, SavedItem, WireStatus } from "../types";
 import { DisplayIcon, GearIcon, HelpIcon, LogoIcon, SendIcon } from "./icons";
 
 interface Props {
   presets: PresetMeta[];
+  savedThemes: SavedItem[];
   device: DeviceSummary | null;
   wire: WireStatus;
   sending: boolean;
   saveState: "idle" | "saving" | "saved" | "error";
   onPreset: (id: string) => void;
+  onSavedTheme: (id: string) => void;
+  onSaveTheme: () => void;
   onSend: () => void;
   onWizard: () => void;
   onDiagnostics: () => void;
@@ -25,11 +28,14 @@ const SAVE_LABEL: Record<Props["saveState"], string> = {
 
 export default function Toolbar({
   presets,
+  savedThemes,
   device,
   wire,
   sending,
   saveState,
   onPreset,
+  onSavedTheme,
+  onSaveTheme,
   onSend,
   onWizard,
   onDiagnostics,
@@ -40,7 +46,11 @@ export default function Toolbar({
 
   const applyTheme = () => {
     if (!choice) return;
-    onPreset(choice);
+    if (choice.startsWith("saved:")) {
+      onSavedTheme(choice.slice("saved:".length));
+    } else if (choice.startsWith("preset:")) {
+      onPreset(choice.slice("preset:".length));
+    }
     setChoice("");
   };
 
@@ -58,14 +68,33 @@ export default function Toolbar({
           onChange={(event) => setChoice(event.target.value)}
         >
           <option value="">Apply a theme…</option>
-          {presets.map((preset) => (
-            <option key={preset.id} value={preset.id}>
-              {preset.name}
-            </option>
-          ))}
+          <optgroup label="Built-in">
+            {presets.map((preset) => (
+              <option key={preset.id} value={`preset:${preset.id}`}>
+                {preset.name}
+              </option>
+            ))}
+          </optgroup>
+          {savedThemes.length > 0 && (
+            <optgroup label="Saved">
+              {savedThemes.map((item) => (
+                <option key={item.id} value={`saved:${item.id}`}>
+                  {item.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <button type="button" className="button-small" onClick={applyTheme} disabled={!choice}>
-          All panels
+          Apply
+        </button>
+        <button
+          type="button"
+          className="button-small"
+          onClick={onSaveTheme}
+          title="Save all five panels as a reusable theme"
+        >
+          Save theme
         </button>
       </div>
 

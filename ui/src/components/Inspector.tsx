@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { Align, Layer, MetricKey, Panel, PausedPanel, PresetMeta, Widget } from "../types";
+import type {
+  Align,
+  Layer,
+  MetricKey,
+  Panel,
+  PausedPanel,
+  PresetMeta,
+  SavedItem,
+  Widget,
+} from "../types";
 import { METRICS, isTemperatureMetric, metricMeta } from "../types";
 import { mediaUrl } from "../api";
 import { SendIcon } from "./icons";
@@ -10,6 +19,7 @@ interface Props {
   panelIndex: number;
   layer: Layer | null;
   presets: PresetMeta[];
+  savedPanels: SavedItem[];
   uploading: boolean;
   applying: boolean;
   pausedPanel: PausedPanel | null;
@@ -21,6 +31,8 @@ interface Props {
   onBackground: (patch: Partial<Panel["background"]>) => void;
   onUpload: (file: File) => void;
   onApplyPanelPreset: (presetId: string) => void;
+  onSavedPanel: (savedId: string) => void;
+  onSavePanel: () => void;
   onApplyPanel: () => void;
   onPausePanel: () => void;
   onResumePanel: () => void;
@@ -168,6 +180,7 @@ export default function Inspector({
   panelIndex,
   layer,
   presets,
+  savedPanels,
   uploading,
   applying,
   pausedPanel,
@@ -179,12 +192,15 @@ export default function Inspector({
   onBackground,
   onUpload,
   onApplyPanelPreset,
+  onSavedPanel,
+  onSavePanel,
   onApplyPanel,
   onPausePanel,
   onResumePanel,
   onClearLayers,
 }: Props) {
   const [themeChoice, setThemeChoice] = useState("");
+  const [savedPanelChoice, setSavedPanelChoice] = useState("");
   const background = panel.background;
   const showsValue = layer !== null && (layer.kind === "text" || layer.widget === "number");
   const temperature =
@@ -196,16 +212,26 @@ export default function Inspector({
       <section className="field-group">
         <div className="inspector-heading">
           <h2 className="section-title">Panel {panelIndex + 1}</h2>
-          <button
-            type="button"
-            className="button-primary button-small"
-            disabled={applying}
-            title={`Send only panel ${panelIndex + 1} to the display`}
-            onClick={onApplyPanel}
-          >
-            <SendIcon />
-            {applying ? "Applying…" : "Apply"}
-          </button>
+          <div className="inspector-actions">
+            <button
+              type="button"
+              className="button-small"
+              title={`Save panel ${panelIndex + 1} for reuse`}
+              onClick={onSavePanel}
+            >
+              Save panel
+            </button>
+            <button
+              type="button"
+              className="button-primary button-small"
+              disabled={applying}
+              title={`Send only panel ${panelIndex + 1} to the display`}
+              onClick={onApplyPanel}
+            >
+              <SendIcon />
+              {applying ? "Applying…" : "Apply"}
+            </button>
+          </div>
         </div>
         <p className="hint">
           Changes stay in the editor. <strong>Apply</strong> sends this panel only;{" "}
@@ -337,6 +363,41 @@ export default function Inspector({
             Replaces this panel in the editor. Press <strong>Apply</strong> above to send it;
             other panels stay as they are.
           </p>
+        </div>
+
+        <div className="subgroup">
+          <span className="subgroup-title">Saved panel designs</span>
+          {savedPanels.length > 0 ? (
+            <div className="theme-row">
+              <select
+                value={savedPanelChoice}
+                aria-label="Saved panel design"
+                onChange={(event) => setSavedPanelChoice(event.target.value)}
+              >
+                <option value="">Choose a saved panel…</option>
+                {savedPanels.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="button-small"
+                disabled={!savedPanelChoice}
+                onClick={() => {
+                  onSavedPanel(savedPanelChoice);
+                  setSavedPanelChoice("");
+                }}
+              >
+                Use
+              </button>
+            </div>
+          ) : (
+            <p className="hint">
+              Save this panel with <strong>Save panel</strong> above, then reuse it on any screen.
+            </p>
+          )}
         </div>
 
         <button

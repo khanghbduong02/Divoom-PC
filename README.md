@@ -314,8 +314,12 @@ Browser UI (React)  ──HTTP/WS──▶  Agent (FastAPI)  ──HTTP──▶
 - **Two hardware revisions**: `POST http://<ip>/post` (HW 400) or
   `POST http://<ip>:9000/divoom_api` (HW 402). The wizard probes both.
 - **LocalToken** is injected into every request body when set.
-- **PicIDs** are monotonic per process, and `Draw/ResetHttpGifId` is sent at startup, so
-  panels do not get stuck on "loading".
+- **PicIDs** restart after `Draw/ResetHttpGifId`, which is sent at startup and again
+  after 32 successful frame uploads. The device's frame cache can leave panels stuck on
+  "loading" after a few hundred pushes; the periodic reset keeps it healthy.
+- **Unchanged frames are skipped indefinitely.** Earlier builds flushed every panel every
+  minute, which made all five redraw at once; only a changed image, an explicit Apply, a
+  device error or a config change now triggers a frame.
 - **Panel addressing**: frames carry a length-5 `LcdArray` mask; single-panel commands
   use `LcdIndex`.
 - **Always-on loop**: a background thread re-renders with fresh sensor values, compares

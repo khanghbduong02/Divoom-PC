@@ -49,7 +49,10 @@ class FrameIds:
     """Monotonic PicID sequence.
 
     The device leaves a panel stuck on "loading" if an ID is reused, so IDs are
-    allocated once per process and the device's counter is reset at startup.
+    allocated once per process and the device's counter is reset at startup and
+    periodically after that (the firmware's frame cache fills up after a few
+    hundred pushes). ``reset`` restarts the local sequence after that device
+    reset, so IDs line up with the device's fresh counter again.
     """
 
     def __init__(self, start: int = 1) -> None:
@@ -66,6 +69,11 @@ class FrameIds:
             value = self._value
             self._value += 1
             return value
+
+    def reset(self, start: int = 1) -> None:
+        """Restart numbering at ``start`` after ``Draw/ResetHttpGifId``."""
+        with self._lock:
+            self._value = int(start)
 
 
 @dataclass
@@ -243,7 +251,7 @@ class DeviceTransport:
         jpeg: bytes,
         panels: list[int],
         pic_id: int,
-        speed_ms: int = 100,
+        speed_ms: int = 1000,
         width: int = 128,
     ) -> dict[str, object]:
         """Push one 128x128 JPEG to the selected panels.

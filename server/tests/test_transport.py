@@ -156,6 +156,7 @@ def test_send_frame_encodes_jpeg_and_panel_mask(fake_gate: int) -> None:
     assert sent["PicNum"] == 1
     assert sent["PicOffset"] == 0
     assert sent["PicID"] == 7
+    assert sent["PicSpeed"] == 1000
     assert sent["LcdArray"] == [0, 0, 1, 0, 0]
     assert base64.b64decode(sent["PicData"]) == b"\xff\xd8fake-jpeg"
 
@@ -165,6 +166,16 @@ def test_frame_ids_increase_monotonically() -> None:
     allocated = [ids.next() for _ in range(3)]
     assert allocated == [5, 6, 7]
     assert ids.current == 8
+
+
+def test_frame_ids_restart_after_a_device_reset() -> None:
+    ids = FrameIds(start=5)
+    assert [ids.next() for _ in range(2)] == [5, 6]
+    ids.reset()
+    assert ids.next() == 1
+    assert ids.current == 2
+    ids.reset(start=10)
+    assert ids.next() == 10
 
 
 def test_lcd_helpers() -> None:

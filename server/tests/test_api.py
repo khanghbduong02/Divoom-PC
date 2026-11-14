@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from gate_studio.api import create_app
+from gate_studio.api import _push, create_app
 from gate_studio.config import ConfigStore
 from gate_studio.device.external import ExternalSnapshot
 from gate_studio.library import SavedLibrary
@@ -359,6 +359,38 @@ def test_diagnostics_shape(client: TestClient) -> None:
     body = client.get("/api/diagnostics").json()
     assert set(body) >= {"device", "last_replies", "last_error", "sensors"}
     assert "cpu_percent" in body["sensors"]
+    assert body["pic_id"] >= 1
+    assert body["frames_since_reset"] >= 0
+
+
+def test_pushes_reset_pic_ids_before_the_device_cache_fills(client: TestClient, monkeypatch) -> None:
+    state = client.app.state.gate
+
+    class FakeTransport:
+        def __init__(self) -> None:
+            self.pic_ids: list[int] = []
+            self.resets = 0
+
+        def reset_pic_id(self) -> dict[str, object]:
+            self.resets += 1
+            return {}
+
+        def send_frame(self, payload: bytes, panels: list[int], pic_id: int) -> dict[str, object]:
+            self.pic_ids.append(pic_id)
+            return {}
+
+    transport = FakeTransport()
+    monkeypatch.setattr(state, "transport", lambda: transport)
+    monkeypatch.setattr("gate_studio.api.PIC_RESET_EVERY", 2)
+    state.ids.reset()
+    state.frames_since_reset = 0
+
+    images = [Image.new("RGB", (128, 128), (index * 20, 0, 0)) for index in range(5)]
+    _push(state, list(range(5)), images)
+
+    assert transport.pic_ids == [1, 2, 1, 2, 1]
+    assert transport.resets == 2
+    assert state.frames_since_reset == 1
 
 
 def test_theme_drops_missing_background_media(client: TestClient) -> None:

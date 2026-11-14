@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import logging
 import subprocess
 import sys
 import time
@@ -42,6 +43,13 @@ from .render import encode_jpeg, encode_png, render_all
 from .render.renderer import render_test_panel
 from .sensors import SensorCollector
 
+log = logging.getLogger(__name__)
+
+#: How many successful frame uploads to allow before clearing the device's
+#: frame-ID cache. The firmware can leave screens stuck on "loading" after a
+#: few hundred pushes; resetting well before that keeps the display healthy.
+PIC_RESET_EVERY = 32
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -74,6 +82,7 @@ class AppState:
             self.save()
         self.collector = collector or SensorCollector()
         self.ids = FrameIds()
+        self.frames_since_reset = 0
         self._transport: DeviceTransport | None = None
         self._transport_key: tuple | None = None
         self.frame_lock = Lock()
@@ -144,6 +153,9 @@ class AppState:
     def apply_config(self, config: AppConfig) -> None:
         self.config = config
         self.close_transport()
+        # A different device has not seen these frames, and even the same device
+        # may have forgotten them while the config was being changed.
+        self.last_frames.clear()
         self.external_snapshot = None
         self._watch_next = 0.0
 
@@ -400,21 +412,41 @@ def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[
             if not 0 <= index < len(images):
                 continue
             payload = encode_jpeg(images[index])
-            pic_id = state.ids.next()
-            reply = transport.send_frame(payload, [index], pic_id)
+            result = _send_panel(state, transport, payload, index)
             state.last_frames[index] = payload
-            results.append(
-                {
-                    "panel": index,
-                    "ok": True,
-                    "pic_id": pic_id,
-                    "bytes": len(payload),
-                    "reply": reply,
-                }
-            )
+            results.append(result)
         state.last_replies = results
         state.last_push_at = time.time()
         return results
+
+
+def _send_panel(
+    state: AppState,
+    transport: DeviceTransport,
+    payload: bytes,
+    panel: int,
+) -> dict[str, object]:
+    """Upload one panel frame, restarting the device's PicID sequence when due.
+
+    Caller must hold ``state.frame_lock``. The reset happens between frames, so
+    the screen keeps its current image and the next ID is valid for the fresh
+    device counter.
+    """
+    if state.frames_since_reset >= PIC_RESET_EVERY:
+        transport.reset_pic_id()
+        state.ids.reset()
+        state.frames_since_reset = 0
+        log.info("Reset device PicID after %d frames", PIC_RESET_EVERY)
+    pic_id = state.ids.next()
+    reply = transport.send_frame(payload, [panel], pic_id)
+    state.frames_since_reset += 1
+    return {
+        "panel": panel,
+        "ok": True,
+        "pic_id": pic_id,
+        "bytes": len(payload),
+        "reply": reply,
+    }
 
 
 def _apply_draft(state: AppState, panels: list[int] | None) -> None:
@@ -436,7 +468,6 @@ def _push_loop(state: AppState) -> None:
     """Keep the applied design live: re-render and send on an interval, skipping
     frames whose bytes did not change so an idle panel is not rewritten. Draft
     edits never reach this loop until Apply/Send copies them into applied_theme."""
-    last_full = 0.0
     while not state._stop_push.wait(0.3):
         settings = state.config.settings
         if not settings.auto_push or not state.config.device.configured:
@@ -449,9 +480,6 @@ def _push_loop(state: AppState) -> None:
             with state.frame_lock:
                 transport = state.transport()
                 images = _render_theme(state, state.applied_theme)
-                if now - last_full > 60:
-                    state.last_frames.clear()
-                    last_full = now
                 paused = state.paused_indices()
                 empty = {
                     index
@@ -465,16 +493,9 @@ def _push_loop(state: AppState) -> None:
                     if state.last_frames.get(index) == payload:
                         state.skipped_frames += 1
                         continue
-                    reply = transport.send_frame(payload, [index], state.ids.next())
+                    result = _send_panel(state, transport, payload, index)
                     state.last_frames[index] = payload
-                    state.last_replies = [
-                        {
-                            "panel": index,
-                            "ok": True,
-                            "bytes": len(payload),
-                            "reply": reply,
-                        }
-                    ]
+                    state.last_replies = [result]
                 state.last_push_at = time.time()
                 state.last_error = None
         except DeviceError as exc:
@@ -547,6 +568,8 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             # PicIDs must start clean once per process or panels stay on "loading".
             try:
                 state.transport().reset_pic_id()
+                state.ids.reset()
+                state.frames_since_reset = 0
             except DeviceError as exc:
                 state.last_error = exc.as_dict()
         state.start_pusher()
@@ -912,6 +935,9 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             "auto_push": state.config.settings.auto_push,
             "last_push_at": state.last_push_at,
             "skipped_frames": state.skipped_frames,
+            "pic_id": state.ids.current,
+            "frames_since_reset": state.frames_since_reset,
+            "pic_reset_every": PIC_RESET_EVERY,
             "paused_panels": state.paused_snapshot(),
             "external_watch": state.external_watch_state(),
             "hardware": state.collector.hardware(),

@@ -112,7 +112,7 @@ app can hold the connection during setup; close it temporarily if probing fails.
 curl -L -o GateThemeStudio.exe \
   https://github.com/khanghbduong02/Divoom-PC/releases/latest/download/GateThemeStudio.exe
 sha256sum GateThemeStudio.exe
-# 2f3d4f3837f21d7a0870cde185acfff3060558f38b525dc418e37d50665d97db
+# 01baaea4056394bac1ebf78536c1b1d683d118422f61ce911e4c3ba7917794af
 ```
 
 The public download page is:

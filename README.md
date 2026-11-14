@@ -56,8 +56,10 @@ The source checkout and exe build steps are below for development.
    or **Send all** to send it.
 
 The app **starts with Windows** and keeps the display live. Closing the browser tab does
-not stop it. To stop it for good, right-click the tray icon and choose **Quit Gate Theme
-Studio** (or untick *Start with Windows* in **Settings**).
+not stop it. **To reopen the editor later, double-click `GateThemeStudio.exe` again**
+(it opens the editor of the copy that is already running), or right-click the tray icon
+and choose **Open editor**. To stop it for good, right-click the tray icon and choose
+**Quit Gate Theme Studio** (or untick *Start with Windows* in **Settings**).
 
 With the tray icon you can also: open the editor, send immediately, pause/resume all
 updates, and open Settings.
@@ -315,8 +317,9 @@ Browser UI (React)  ──HTTP/WS──▶  Agent (FastAPI)  ──HTTP──▶
   `POST http://<ip>:9000/divoom_api` (HW 402). The wizard probes both.
 - **LocalToken** is injected into every request body when set.
 - **PicIDs** restart after `Draw/ResetHttpGifId`, which is sent at startup and again
-  after 32 successful frame uploads. The device's frame cache can leave panels stuck on
-  "loading" after a few hundred pushes; the periodic reset keeps it healthy.
+  after 80 successful frame uploads. The device starts showing "Loading" again after
+  roughly 100 uploads in one sequence; 80 stays safely below that without returning to
+  the old 32-frame reset, which made the loading screen flash far too often.
 - **Unchanged frames are skipped indefinitely.** Earlier builds flushed every panel every
   minute, which made all five redraw at once; only a changed image, an explicit Apply, a
   device error or a config change now triggers a frame.

@@ -161,6 +161,50 @@ def test_send_frame_encodes_jpeg_and_panel_mask(fake_gate: int) -> None:
     assert base64.b64decode(sent["PicData"]) == b"\xff\xd8fake-jpeg"
 
 
+def test_send_frames_batches_independent_panels_in_one_command_list(fake_gate: int) -> None:
+    with DeviceTransport("127.0.0.1", fake_gate, TOKEN, HW400) as gate:
+        gate.send_frames(
+            [
+                (b"\xff\xd8panel-a", [0], 11),
+                (b"\xff\xd8panel-b", [3], 12),
+            ]
+        )
+    sent = _Handler.received[-1]
+    assert sent["Command"] == "Draw/CommandList"
+    commands = sent["CommandList"]
+    assert [item["PicID"] for item in commands] == [11, 12]
+    assert [item["LcdArray"] for item in commands] == [
+        [1, 0, 0, 0, 0],
+        [0, 0, 0, 1, 0],
+    ]
+    assert base64.b64decode(commands[1]["PicData"]) == b"\xff\xd8panel-b"
+
+
+def test_send_item_list_uses_fast_update_without_background(fake_gate: int) -> None:
+    items = [{"TextId": 3, "type": 22, "TextString": "42%"}]
+    with DeviceTransport("127.0.0.1", fake_gate, TOKEN, HW400) as gate:
+        gate.send_item_list(3, items)
+    sent = _Handler.received[-1]
+    assert sent["Command"] == "Draw/SendHttpItemList"
+    assert sent["LcdIndex"] == 3
+    assert sent["NewFlag"] == 0
+    assert sent["ItemList"] == items
+    assert "BackgroudGif" not in sent
+
+
+def test_send_item_list_setup_uses_misspelled_background_field(fake_gate: int) -> None:
+    with DeviceTransport("127.0.0.1", fake_gate, TOKEN, HW400) as gate:
+        gate.send_item_list(
+            1,
+            [{"TextId": 1, "type": 22, "TextString": "hi"}],
+            background_gif="http://127.0.0.1/background.gif",
+            new_flag=True,
+        )
+    sent = _Handler.received[-1]
+    assert sent["NewFlag"] == 1
+    assert sent["BackgroudGif"] == "http://127.0.0.1/background.gif"
+
+
 def test_frame_ids_increase_monotonically() -> None:
     ids = FrameIds(start=5)
     allocated = [ids.next() for _ in range(3)]

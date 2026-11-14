@@ -49,10 +49,9 @@ class FrameIds:
     """Monotonic PicID sequence.
 
     The device leaves a panel stuck on "loading" if an ID is reused, so IDs are
-    allocated once per process and the device's counter is reset at startup and
-    periodically after that (the firmware's frame cache fills up after a few
-    hundred pushes). ``reset`` restarts the local sequence after that device
-    reset, so IDs line up with the device's fresh counter again.
+    allocated per process after ``Draw/ResetHttpGifId``. A fresh reset is needed
+    after enough uploads (the device starts showing "Loading" around 100); the
+    caller resets before that limit, not on every frame.
     """
 
     def __init__(self, start: int = 1) -> None:
@@ -246,6 +245,27 @@ class DeviceTransport:
     def reset_pic_id(self) -> dict[str, object]:
         return self._post({"Command": "Draw/ResetHttpGifId"})
 
+    def _frame_command(
+        self,
+        jpeg: bytes,
+        panels: list[int],
+        pic_id: int,
+        speed_ms: int,
+        width: int,
+    ) -> dict[str, object]:
+        if not jpeg:
+            raise ValueError("frame payload is empty")
+        return {
+            "Command": "Draw/SendHttpGif",
+            "PicNum": 1,
+            "PicWidth": width,
+            "PicOffset": 0,
+            "PicID": int(pic_id),
+            "PicSpeed": int(speed_ms),
+            "LcdArray": lcd_mask(panels),
+            "PicData": base64.b64encode(jpeg).decode("ascii"),
+        }
+
     def send_frame(
         self,
         jpeg: bytes,
@@ -258,20 +278,53 @@ class DeviceTransport:
 
         ``PicNum`` is the total frame count of this transfer; a still image is 1.
         """
-        if not jpeg:
-            raise ValueError("frame payload is empty")
-        return self._post(
-            {
-                "Command": "Draw/SendHttpGif",
-                "PicNum": 1,
-                "PicWidth": width,
-                "PicOffset": 0,
-                "PicID": int(pic_id),
-                "PicSpeed": int(speed_ms),
-                "LcdArray": lcd_mask(panels),
-                "PicData": base64.b64encode(jpeg).decode("ascii"),
-            }
-        )
+        return self._post(self._frame_command(jpeg, panels, pic_id, speed_ms, width))
+
+    def send_frames(
+        self,
+        frames: list[tuple[bytes, list[int], int]],
+        speed_ms: int = 1000,
+        width: int = 128,
+    ) -> dict[str, object]:
+        """Push several independent panel images in one ``Draw/CommandList``.
+
+        A ``CommandList`` is the device's recommended way to update multiple
+        screens together; separate ``SendHttpGif`` POSTs make each screen flash
+        its loading state before the next one is updated.  Each inner command
+        keeps its own ``PicID`` and ``LcdArray``.
+        """
+        if not frames:
+            raise ValueError("no frames to send")
+        commands = [
+            self._frame_command(jpeg, panels, pic_id, speed_ms, width)
+            for jpeg, panels, pic_id in frames
+        ]
+        return self._post({"Command": "Draw/CommandList", "CommandList": commands})
+
+    def send_item_list(
+        self,
+        panel: int,
+        items: list[dict[str, object]],
+        background_gif: str | None = None,
+        new_flag: bool = False,
+    ) -> dict[str, object]:
+        """Update native text items on one panel without redrawing its background.
+
+        ``new_flag`` installs the hosted background and initial item layout.  A
+        regular update uses ``NewFlag: 0``, which is the fast, flash-free path.
+        """
+        if not items:
+            raise ValueError("native item list must not be empty")
+        payload: dict[str, object] = {
+            "Command": "Draw/SendHttpItemList",
+            "LcdIndex": lcd_index(panel),
+            "NewFlag": 1 if new_flag else 0,
+            "ItemList": items,
+        }
+        if background_gif:
+            # The device API misspells this field; it must stay "BackgroudGif".
+            payload["BackgroudGif"] = background_gif
+        return self._post(payload)
 
 
 def probe_endpoint(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -216,6 +217,80 @@ def test_send_resumes_a_paused_panel(client: TestClient, monkeypatch) -> None:
     assert client.app.state.gate.paused_snapshot() == []
 
 
+def test_send_uses_the_draft_sent_with_apply(client: TestClient, monkeypatch) -> None:
+    state = client.app.state.gate
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][1]["background"]["color"] = "#0A0B0C"
+    monkeypatch.setattr("gate_studio.api._push", lambda *args, **kwargs: [])
+
+    response = client.post("/api/send", json={"panels": [1], "theme": theme})
+
+    assert response.status_code == 200
+    assert state.config.theme.panels[1].background.color == "#0A0B0C"
+    assert state.applied_theme.panels[1].background.color == "#0A0B0C"
+
+
+def test_stale_external_snapshot_cannot_undo_apply(client: TestClient) -> None:
+    state = client.app.state.gate
+    first = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple((0, 100 + index, "") for index in range(5)),
+    )
+    changed_faces = list(first.faces)
+    changed_faces[2] = (0, 999, "")
+    second = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple(changed_faces),
+    )
+
+    state.external_snapshot = first
+    in_flight = state.takeover_version()
+    state.resume_panels([2])
+
+    assert state.apply_external_snapshot(second, takeover_version=in_flight) == []
+    assert state.paused_snapshot() == []
+
+
+def test_apply_takes_the_next_external_layout_as_the_new_baseline(
+    client: TestClient,
+) -> None:
+    state = client.app.state.gate
+    first = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple((0, 100 + index, "") for index in range(5)),
+    )
+    changed_faces = list(first.faces)
+    changed_faces[2] = (0, 999, "")
+    second = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple(changed_faces),
+    )
+    later_faces = list(second.faces)
+    later_faces[3] = (0, 1000, "")
+    later = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple(later_faces),
+    )
+
+    state.external_snapshot = first
+    state.resume_panels([2])
+    assert state.apply_external_snapshot(second) == []
+    assert state.paused_snapshot() == []
+
+    assert state.apply_external_snapshot(later) == [3]
+    assert [item["panel"] for item in state.paused_snapshot()] == [3]
+
+
 def test_external_change_pauses_only_that_panel(client: TestClient) -> None:
     state = client.app.state.gate
     first = ExternalSnapshot(
@@ -363,7 +438,9 @@ def test_diagnostics_shape(client: TestClient) -> None:
     assert body["frames_since_reset"] >= 0
 
 
-def test_pushes_reset_pic_ids_before_the_device_cache_fills(client: TestClient, monkeypatch) -> None:
+def test_pushes_reset_pic_ids_before_the_device_cache_fills(
+    client: TestClient, monkeypatch
+) -> None:
     state = client.app.state.gate
 
     class FakeTransport:
@@ -391,6 +468,63 @@ def test_pushes_reset_pic_ids_before_the_device_cache_fills(client: TestClient, 
     assert transport.pic_ids == [1, 2, 1, 2, 1]
     assert transport.resets == 2
     assert state.frames_since_reset == 1
+
+
+def test_push_batches_changed_panels_into_one_device_request(
+    client: TestClient, monkeypatch
+) -> None:
+    state = client.app.state.gate
+
+    class FakeBatchTransport:
+        def __init__(self) -> None:
+            self.batches: list[list[tuple[bytes, list[int], int]]] = []
+
+        def send_frames(self, frames):  # noqa: ANN001 - test double
+            self.batches.append(frames)
+            return {"error_code": 0}
+
+    transport = FakeBatchTransport()
+    monkeypatch.setattr(state, "transport", lambda: transport)
+    state.ids.reset()
+    state.frames_since_reset = 0
+
+    images = [Image.new("RGB", (128, 128), (index * 20, 0, 0)) for index in range(5)]
+    results = _push(state, list(range(5)), images)
+
+    assert len(transport.batches) == 1
+    assert [frame[1] for frame in transport.batches[0]] == [
+        [0],
+        [1],
+        [2],
+        [3],
+        [4],
+    ]
+    assert [frame[2] for frame in transport.batches[0]] == [1, 2, 3, 4, 5]
+    assert [result["panel"] for result in results] == [0, 1, 2, 3, 4]
+
+
+def test_watcher_watchdog_restarts_a_dead_watcher(client: TestClient, monkeypatch) -> None:
+    state = client.app.state.gate
+    state.config.device.host = "127.0.0.1"
+    state.config.device.port = 9000
+    state.config.device.protocol = "hw402"
+    state.config.settings.external_watch = True
+    state.config.settings.auto_push = False
+    state.stop_watcher()
+    state._watch_stopping = False
+    state._stop_watch.clear()
+
+    started = Event()
+
+    def fake_watch_loop(_state) -> None:  # noqa: ANN001 - test double
+        started.set()
+
+    monkeypatch.setattr("gate_studio.api._watch_loop", fake_watch_loop)
+    state._watch_thread = None
+    state.ensure_watcher()
+
+    assert started.wait(1.0)
+    assert state._watch_restarts == 1
 
 
 def test_theme_drops_missing_background_media(client: TestClient) -> None:

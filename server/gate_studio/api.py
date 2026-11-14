@@ -6,14 +6,17 @@ import asyncio
 import base64
 import contextlib
 import logging
+import socket
 import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime
 from typing import Literal
 from contextlib import asynccontextmanager
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event, Lock, RLock, Thread
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -38,6 +41,7 @@ from .device import (
 )
 from .library import SavedLibrary
 from .models import AppConfig, AppSettings, Background, DeviceConfig, Panel, PausedPanel, Theme
+from .native import NativePanel, build_items, save_background, setup_items
 from .presets import list_presets, load_preset
 from .render import encode_jpeg, encode_png, render_all
 from .render.renderer import render_test_panel
@@ -45,10 +49,11 @@ from .sensors import SensorCollector
 
 log = logging.getLogger(__name__)
 
-#: How many successful frame uploads to allow before clearing the device's
-#: frame-ID cache. The firmware can leave screens stuck on "loading" after a
-#: few hundred pushes; resetting well before that keeps the display healthy.
-PIC_RESET_EVERY = 32
+#: How many frame uploads to allow before clearing the device's frame-ID
+#: cache. The Times Gate starts showing "Loading" again after roughly 100
+#: frames in one PicID sequence, so reset with a safety margin below that.
+#: Resetting every 32 frames (the old behavior) made the loading flash too often.
+PIC_RESET_EVERY = 80
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -67,8 +72,14 @@ SENSOR_SETUP_SCRIPT = _resource_root() / "tools" / "setup-sensors.ps1"
 class AppState:
     """Everything the routes share, kept off module globals so tests can isolate."""
 
-    def __init__(self, store: ConfigStore, collector: SensorCollector | None = None) -> None:
+    def __init__(
+        self,
+        store: ConfigStore,
+        collector: SensorCollector | None = None,
+        port: int = 8765,
+    ) -> None:
         self.store = store
+        self.port = port
         self.library = SavedLibrary(store.data_dir)
         self.config: AppConfig = store.load()
         #: what the panels currently show; edits only replace it on Apply/Send
@@ -85,9 +96,13 @@ class AppState:
         self.frames_since_reset = 0
         self._transport: DeviceTransport | None = None
         self._transport_key: tuple | None = None
-        self.frame_lock = Lock()
+        # Re-entrant: native setup may be entered from the push loop, which
+        # already holds this lock, while /api/send enters it directly.
+        self.frame_lock = RLock()
         self.last_replies: list[dict[str, object]] = []
         self.last_error: dict[str, object] | None = None
+        #: native item-list layouts currently installed on the device
+        self.native_layouts: dict[int, NativePanel] = {}
 
         # screens another app changed; persisted so a restart cannot overwrite them
         self._pause_lock = Lock()
@@ -114,7 +129,12 @@ class AppState:
         # request can never hold up sensor updates.
         self._watch_thread: Thread | None = None
         self._stop_watch = Event()
+        self._watch_stopping = False
         self._watch_next = 0.0
+        self._watch_ready = Event()
+        self._watch_restarts = 0
+        self._takeover_version = 0
+        self._skip_external_once = False
 
     def start_pusher(self) -> None:
         if self._push_thread and self._push_thread.is_alive():
@@ -134,13 +154,33 @@ class AppState:
     def start_watcher(self) -> None:
         if self._watch_thread and self._watch_thread.is_alive():
             return
+        self._watch_stopping = False
         self._stop_watch.clear()
         self._watch_thread = Thread(
             target=_watch_loop, args=(self,), name="external-watch", daemon=True
         )
         self._watch_thread.start()
+        log.info("external watch started")
+
+    def ensure_watcher(self) -> None:
+        """Restart the Divoom-app watcher if it died unexpectedly."""
+        if self._stop_push.is_set() or self._watch_stopping:
+            return
+        settings = self.config.settings
+        if not settings.external_watch or not self.config.device.configured:
+            return
+        thread = self._watch_thread
+        if thread is not None and thread.is_alive():
+            return
+        log.warning("external watch stopped; restarting it")
+        self._watch_restarts += 1
+        try:
+            self.start_watcher()
+        except Exception:  # noqa: BLE001 - never let a watcher restart stop pushes
+            log.exception("could not restart external watch")
 
     def stop_watcher(self) -> None:
+        self._watch_stopping = True
         self._stop_watch.set()
         if self._watch_thread:
             self._watch_thread.join(timeout=2.0)
@@ -156,6 +196,7 @@ class AppState:
         # A different device has not seen these frames, and even the same device
         # may have forgotten them while the config was being changed.
         self.last_frames.clear()
+        self.native_layouts.clear()
         self.external_snapshot = None
         self._watch_next = 0.0
 
@@ -242,6 +283,12 @@ class AppState:
             return self.paused_snapshot()
         with self.frame_lock:
             with self._pause_lock:
+                # An explicit resume/Apply owns these screens now.  A cloud
+                # read that started before this moment must not pause them
+                # again when it returns, and the next read becomes the new
+                # baseline instead of reviving the old pause.
+                self._takeover_version += 1
+                self._skip_external_once = True
                 changed = False
                 for index in indices:
                     if self.paused_panels.pop(index, None) is not None:
@@ -262,10 +309,24 @@ class AppState:
             "message": self.external_status.get("message"),
         }
 
-    def apply_external_snapshot(self, snapshot: ExternalSnapshot) -> list[int]:
+    def takeover_version(self) -> int:
+        with self._pause_lock:
+            return self._takeover_version
+
+    def apply_external_snapshot(
+        self, snapshot: ExternalSnapshot, takeover_version: int | None = None
+    ) -> list[int]:
         """Pause screens the Divoom app changed since the previous cloud read."""
         changed = diff_snapshots(self.external_snapshot, snapshot)
         self.external_snapshot = snapshot
+        if takeover_version is not None and takeover_version != self.takeover_version():
+            # The user pressed Apply/Resume while this read was in flight.
+            return []
+        with self._pause_lock:
+            if self._skip_external_once:
+                # Apply/Resume wins; make this layout the new baseline.
+                self._skip_external_once = False
+                return []
         if changed:
             reason = (
                 "The Divoom app changed the display layout. Updates are paused so it is not overwritten."
@@ -319,6 +380,9 @@ class ConnectRequest(BaseModel):
 
 class SendRequest(BaseModel):
     panels: list[int] | None = None
+    #: the editor's current draft, so a click on Apply is not raced by the
+    #: editor's debounced autosave
+    theme: Theme | None = None
 
 
 class TestFrameRequest(BaseModel):
@@ -335,6 +399,7 @@ class SettingsPatch(BaseModel):
     push_interval: float | None = None
     allow_lan: bool | None = None
     auto_push: bool | None = None
+    native_stats: bool | None = None
     external_watch: bool | None = None
     external_check_interval: float | None = Field(default=None, ge=2, le=60)
     autostart: bool | None = None
@@ -383,7 +448,7 @@ def _edited_panels(theme: Theme) -> list[int]:
     return [index for index, panel in enumerate(theme.panels) if not _is_empty_panel(panel)]
 
 
-def _render_theme(state: AppState, theme: Theme) -> list:
+def _render_theme(state: AppState, theme: Theme, *, static_only: bool = False) -> list:
     """Render every panel, giving line layers only the history they ask for."""
     windows: dict[str, int] = {}
     for panel in theme.panels:
@@ -400,21 +465,203 @@ def _render_theme(state: AppState, theme: Theme) -> list:
         state.store.media_dir,
         history=history,
         temperature_unit=state.config.settings.temperature_unit,
+        static_only=static_only,
     )
+
+
+def _lan_ip() -> str | None:
+    """Best-effort LAN address the Times Gate can use to fetch a background."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def _background_url(state: AppState, name: str) -> str | None:
+    host = _lan_ip()
+    if host is None:
+        return None
+    return (
+        f"http://{host}:{state.port}/media/{name}"
+        f"?token={quote(state.store.token())}"
+    )
+
+
+def _active_native_panels(state: AppState, theme: Theme, requested: list[int] | None = None) -> list[int]:
+    paused = state.paused_indices()
+    candidates = requested if requested is not None else _edited_panels(theme)
+    return [
+        index
+        for index in candidates
+        if 0 <= index < len(theme.panels)
+        and index not in paused
+        and not _is_empty_panel(theme.panels[index])
+        and bool(build_items(theme.panels[index], {}, datetime.now()))
+    ]
+
+
+def _setup_native(state: AppState, theme: Theme, panels: list[int]) -> bool:
+    """Install a stable background and native text for ``panels``.
+
+    The device fetches the static artwork once via ``BackgroudGif`` and then
+    only ``SendHttpItemList`` items change, avoiding repeated JPEG uploads.
+    """
+    if not state.config.settings.native_stats:
+        return False
+    if not state.config.settings.allow_lan:
+        state.last_error = {
+            "kind": "device",
+            "message": "Stable stats need LAN mode so the Times Gate can fetch the panel background.",
+            "raw": None,
+            "hint": "Enable LAN access in Settings and restart Gate Theme Studio.",
+        }
+        return False
+    targets = _active_native_panels(state, theme, panels)
+    if not targets:
+        return False
+    values = state.collector.snapshot()
+    now = datetime.now()
+    images = _render_theme(state, theme, static_only=True)
+    transport = state.transport()
+    layouts: dict[int, NativePanel] = {}
+    with state.frame_lock:
+        try:
+            for index in targets:
+                name = save_background(state.store, theme.id, index, images[index])
+                url = _background_url(state, name)
+                if url is None:
+                    raise DeviceError(
+                        DeviceErrorKind.NETWORK,
+                        "Could not determine this PC's LAN address for the native background.",
+                    )
+                items = setup_items(
+                    theme.panels[index],
+                    values,
+                    now,
+                    state.config.settings.temperature_unit,
+                )
+                transport.send_item_list(
+                    index,
+                    items,
+                    background_gif=url,
+                    new_flag=True,
+                )
+                layouts[index] = NativePanel(panel=index, background_name=name)
+        except DeviceError as exc:
+            state.last_error = exc.as_dict()
+            state.native_layouts.clear()
+            return False
+        state.native_layouts = layouts
+        state.last_push_at = time.time()
+        state.last_error = None
+        state.last_replies = [
+            {
+                "panel": index,
+                "ok": True,
+                "native": True,
+                "background": layout.background_name,
+            }
+            for index, layout in layouts.items()
+        ]
+        return bool(layouts)
+
+
+def _update_native(state: AppState) -> bool:
+    """Send the current values as native text items without redrawing panels."""
+    if not state.native_layouts:
+        return False
+    values = state.collector.snapshot()
+    now = datetime.now()
+    transport = state.transport()
+    paused = state.paused_indices()
+    try:
+        for index in list(state.native_layouts):
+            if index in paused:
+                continue
+            items = build_items(
+                state.applied_theme.panels[index],
+                values,
+                now,
+                state.config.settings.temperature_unit,
+            )
+            transport.send_item_list(index, items)
+    except DeviceError as exc:
+        state.last_error = exc.as_dict()
+        # Keep the layout: the static artwork is already installed.  Retrying
+        # the text update is cheap and does not flash the panel; re-uploading
+        # the artwork every few seconds is what we are trying to avoid.
+        return False
+    state.last_error = None
+    state.last_push_at = time.time()
+    state.last_replies = [
+        {"panel": index, "ok": True, "native": True}
+        for index in state.native_layouts
+    ]
+    return True
+
+
+def _reset_pic_ids(state: AppState, transport: DeviceTransport) -> None:
+    transport.reset_pic_id()
+    state.ids.reset()
+    state.frames_since_reset = 0
+    log.info("Reset device PicID after %d frames", PIC_RESET_EVERY)
 
 
 def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[str, object]]:
     with state.frame_lock:
         transport = state.transport()
         targets = range(len(images)) if panels is None else panels
+        frames = [
+            (index, encode_jpeg(images[index]))
+            for index in targets
+            if 0 <= index < len(images)
+        ]
         results: list[dict[str, object]] = []
-        for index in targets:
-            if not 0 <= index < len(images):
-                continue
-            payload = encode_jpeg(images[index])
-            result = _send_panel(state, transport, payload, index)
-            state.last_frames[index] = payload
-            results.append(result)
+
+        batch_sender = getattr(transport, "send_frames", None)
+        if len(frames) > 1 and batch_sender is not None:
+            # Updating five panels as five separate requests makes the device
+            # show its loading state on one screen after another. A command
+            # list applies the same batch in one request.
+            if state.frames_since_reset + len(frames) > PIC_RESET_EVERY:
+                _reset_pic_ids(state, transport)
+            batch = [
+                (payload, [index], state.ids.next()) for index, payload in frames
+            ]
+            try:
+                reply = batch_sender(batch)
+            except DeviceError as exc:
+                if exc.kind is not DeviceErrorKind.DEVICE:
+                    raise
+                # Older firmware may reject Draw/CommandList.  Keep updating
+                # the panels rather than leaving the display behind.
+                log.warning("Draw/CommandList rejected; using single-panel sends")
+                for index, payload in frames:
+                    result = _send_panel(state, transport, payload, index)
+                    state.last_frames[index] = payload
+                    results.append(result)
+            else:
+                state.frames_since_reset += len(batch)
+                for (index, payload), (_, _, pic_id) in zip(frames, batch):
+                    state.last_frames[index] = payload
+                    results.append(
+                        {
+                            "panel": index,
+                            "ok": True,
+                            "pic_id": pic_id,
+                            "bytes": len(payload),
+                            "reply": reply,
+                        }
+                    )
+        else:
+            for index, payload in frames:
+                result = _send_panel(state, transport, payload, index)
+                state.last_frames[index] = payload
+                results.append(result)
         state.last_replies = results
         state.last_push_at = time.time()
         return results
@@ -426,17 +673,13 @@ def _send_panel(
     payload: bytes,
     panel: int,
 ) -> dict[str, object]:
-    """Upload one panel frame, restarting the device's PicID sequence when due.
+    """Upload one panel frame, resetting the PicID sequence when due.
 
-    Caller must hold ``state.frame_lock``. The reset happens between frames, so
-    the screen keeps its current image and the next ID is valid for the fresh
-    device counter.
+    Caller must hold ``state.frame_lock``. The reset happens between frames so
+    the next ID is valid for the device's fresh counter.
     """
     if state.frames_since_reset >= PIC_RESET_EVERY:
-        transport.reset_pic_id()
-        state.ids.reset()
-        state.frames_since_reset = 0
-        log.info("Reset device PicID after %d frames", PIC_RESET_EVERY)
+        _reset_pic_ids(state, transport)
     pic_id = state.ids.next()
     reply = transport.send_frame(payload, [panel], pic_id)
     state.frames_since_reset += 1
@@ -472,6 +715,7 @@ def _push_loop(state: AppState) -> None:
         settings = state.config.settings
         if not settings.auto_push or not state.config.device.configured:
             continue
+        state.ensure_watcher()
         now = time.monotonic()
         if now < state._next_push:
             continue
@@ -479,6 +723,22 @@ def _push_loop(state: AppState) -> None:
         try:
             with state.frame_lock:
                 transport = state.transport()
+                if settings.native_stats:
+                    if not state.native_layouts:
+                        if _setup_native(
+                            state,
+                            state.applied_theme,
+                            _edited_panels(state.applied_theme),
+                        ):
+                            state.last_push_at = time.time()
+                            continue
+                    if state.native_layouts:
+                        _update_native(state)
+                    # Do not fall back to a JPEG upload here: that is what
+                    # causes the device-wide loading flash.  If native setup
+                    # failed, the last stable screen stays untouched.
+                    state.last_push_at = time.time()
+                    continue
                 images = _render_theme(state, state.applied_theme)
                 paused = state.paused_indices()
                 empty = {
@@ -514,37 +774,46 @@ def _push_loop(state: AppState) -> None:
 
 def _watch_loop(state: AppState) -> None:
     """Notice when the Divoom app changes a screen and hand that screen over."""
-    while not state._stop_watch.wait(0.5):
-        settings = state.config.settings
-        if not settings.external_watch or not state.config.device.configured:
-            continue
-        now = time.monotonic()
-        if now < state._watch_next:
-            continue
-        state._watch_next = now + settings.external_check_interval
-        try:
-            device_id = state.ensure_device_id()
-            if device_id is None:
-                raise ExternalWatchError("The display's Divoom device id is not known yet.")
-            snapshot = fetch_snapshot(device_id)
-            state.apply_external_snapshot(snapshot)
-            state.external_status = {
-                "ok": True,
-                "last_checked": time.time(),
-                "message": None,
-            }
-        except (ExternalWatchError, DeviceError) as exc:
-            state.external_status = {
-                "ok": False,
-                "last_checked": time.time(),
-                "message": exc.message,
-            }
-        except Exception as exc:  # noqa: BLE001 - the watcher must survive anything
-            state.external_status = {
-                "ok": False,
-                "last_checked": time.time(),
-                "message": f"Divoom app watch failed: {exc}",
-            }
+    try:
+        while not state._stop_watch.wait(0.5):
+            settings = state.config.settings
+            if not settings.external_watch or not state.config.device.configured:
+                continue
+            now = time.monotonic()
+            if now < state._watch_next:
+                continue
+            state._watch_next = now + settings.external_check_interval
+            try:
+                device_id = state.ensure_device_id()
+                if device_id is None:
+                    raise ExternalWatchError("The display's Divoom device id is not known yet.")
+                takeover = state.takeover_version()
+                snapshot = fetch_snapshot(device_id)
+                state.apply_external_snapshot(snapshot, takeover_version=takeover)
+                state.external_status = {
+                    "ok": True,
+                    "last_checked": time.time(),
+                    "message": None,
+                }
+            except (ExternalWatchError, DeviceError) as exc:
+                state.external_status = {
+                    "ok": False,
+                    "last_checked": time.time(),
+                    "message": exc.message,
+                }
+            except Exception as exc:  # noqa: BLE001 - the watcher must survive anything
+                state.external_status = {
+                    "ok": False,
+                    "last_checked": time.time(),
+                    "message": f"Divoom app watch failed: {exc}",
+                }
+            finally:
+                # The pusher waits for this before its first frame, so startup
+                # does not overwrite settings the Divoom app changed.
+                state._watch_ready.set()
+    except BaseException:
+        log.exception("external watch stopped unexpectedly; the pusher will restart it")
+        raise
 
 
 def _theme_with_media(theme: Theme, store: ConfigStore) -> Theme:
@@ -556,9 +825,13 @@ def _theme_with_media(theme: Theme, store: ConfigStore) -> Theme:
     return theme
 
 
-def create_app(store: ConfigStore | None = None, static_dir: Path | None = None) -> FastAPI:
+def create_app(
+    store: ConfigStore | None = None,
+    static_dir: Path | None = None,
+    port: int = 8765,
+) -> FastAPI:
     store = store or ConfigStore()
-    state = AppState(store)
+    state = AppState(store, port=port)
     static_root = Path(static_dir) if static_dir else STATIC_DIR
 
     @asynccontextmanager
@@ -572,8 +845,12 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
                 state.frames_since_reset = 0
             except DeviceError as exc:
                 state.last_error = exc.as_dict()
-        state.start_pusher()
         state.start_watcher()
+        if state.config.settings.external_watch and state.config.device.configured:
+            # Establish the Divoom-app baseline before the first automatic frame.
+            # A timeout keeps a cloud outage from blocking the local display.
+            state._watch_ready.wait(timeout=2.5)
+        state.start_pusher()
         try:
             yield
         finally:
@@ -614,6 +891,9 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             settings.push_interval = patch.push_interval
         if patch.auto_push is not None:
             settings.auto_push = patch.auto_push
+        if patch.native_stats is not None:
+            settings.native_stats = patch.native_stats
+            state.native_layouts.clear()
         if patch.external_watch is not None:
             if settings.external_watch != patch.external_watch:
                 state.external_snapshot = None
@@ -883,6 +1163,8 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
         path = store.media_path(name)
         if not path.exists():
             raise HTTPException(status_code=404, detail="not found")
+        if path.name.startswith("native-"):
+            log.info("native background fetched: %s", path.name)
         return FileResponse(path)
 
     # -- sensors / push ------------------------------------------------
@@ -896,6 +1178,11 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
 
     @app.post("/api/send")
     def send(body: SendRequest | None = None) -> dict[str, object]:
+        if body is not None and body.theme is not None:
+            # The UI sends the live draft with Apply; this avoids racing its
+            # debounced PUT /api/theme with the frame upload.
+            state.config.theme = _theme_with_media(body.theme, store)
+            state.save()
         requested = body.panels if body else None
         if requested is not None:
             if any(not 0 <= panel <= 4 for panel in requested):
@@ -915,6 +1202,25 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
         _apply_draft(state, panels)
         # An explicit Apply or Send all is the user taking the screens back.
         state.resume_panels(panels)
+        if state.config.settings.native_stats and _active_native_panels(
+            state, state.applied_theme, panels
+        ):
+            if _setup_native(state, state.applied_theme, panels):
+                if state.last_error is not None:
+                    return JSONResponse(
+                        status_code=502,
+                        content={"error": state.last_error},
+                    )
+                return {
+                    "results": state.last_replies,
+                    "skipped": skipped,
+                    "native": True,
+                }
+            if state.last_error is not None:
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": state.last_error},
+                )
         images = _render_theme(state, state.applied_theme)
         try:
             results = _push(state, panels, images)
@@ -940,6 +1246,11 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             "pic_reset_every": PIC_RESET_EVERY,
             "paused_panels": state.paused_snapshot(),
             "external_watch": state.external_watch_state(),
+            "watch_thread_alive": bool(
+                state._watch_thread and state._watch_thread.is_alive()
+            ),
+            "watch_restarts": state._watch_restarts,
+            "watch_ready": state._watch_ready.is_set(),
             "hardware": state.collector.hardware(),
             "temperature_unit": state.config.settings.temperature_unit,
         }

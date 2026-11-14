@@ -11,6 +11,7 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -117,7 +118,21 @@ def setup_logging(store: ConfigStore) -> None:
     )
 
 
-def already_running(port: int, token: str) -> bool:
+def _port_open(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+            return True
+    except OSError:
+        return False
+
+
+def existing_agent(port: int, token: str) -> str:
+    """Return ``"ours"``, ``"other"`` or ``"free"`` for the editor port.
+
+    ``other`` means something is listening but does not accept this data
+    folder's token.  Reporting that separately keeps a second launch from
+    opening a browser at a server owned by the first copy.
+    """
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/api/health",
         headers={"Authorization": f"Bearer {token}"},
@@ -125,9 +140,36 @@ def already_running(port: int, token: str) -> bool:
     try:
         with urllib.request.urlopen(request, timeout=1.0) as reply:
             payload = json.loads(reply.read())
-    except Exception:  # noqa: BLE001 - anything here means "not our agent"
-        return False
-    return bool(payload.get("ok")) and "version" in payload
+    except urllib.error.HTTPError:
+        return "other" if _port_open(port) else "free"
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return "other" if _port_open(port) else "free"
+    if not isinstance(payload, dict):
+        return "other"
+    return "ours" if bool(payload.get("ok")) and "version" in payload else "other"
+
+
+def already_running(port: int, token: str) -> bool:
+    return existing_agent(port, token) == "ours"
+
+
+def report_port_conflict(port: int, silent: bool) -> None:
+    """Explain a port conflict instead of opening a page with the wrong token."""
+    message = (
+        f"Gate Theme Studio could not start because port {port} is already in use.\n\n"
+        "If Gate Theme Studio is already running, open the editor from its tray "
+        "icon (Open editor). Otherwise close the program using that port and try "
+        "again."
+    )
+    log.error(message)
+    if silent:
+        return
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        ctypes.windll.user32.MessageBoxW(
+            None, message, "Gate Theme Studio", 0x10  # MB_ICONERROR
+        )
+    else:
+        print(message)
 
 
 class LocalApi:
@@ -199,10 +241,14 @@ def main(argv: list[str] | None = None) -> None:
     host = args.host or ("0.0.0.0" if bind_lan else "127.0.0.1")
     url = f"http://localhost:{args.port}/?token={quote(token)}"
 
-    if already_running(args.port, token):
+    status = existing_agent(args.port, token)
+    if status == "ours":
         print("Gate Theme Studio is already running — opening the editor.")
         if not (args.no_browser or args.silent):
             webbrowser.open(url)
+        return
+    if status == "other":
+        report_port_conflict(args.port, silent=args.silent)
         return
 
     # A packaged build keeps itself registered at login; source checkouts do not
@@ -210,7 +256,7 @@ def main(argv: list[str] | None = None) -> None:
     if getattr(sys, "frozen", False) and config.settings.autostart and not args.no_autostart:
         desktop.set_autostart(True)
 
-    app = create_app(store)
+    app = create_app(store, port=args.port)
     server = uvicorn.Server(
         uvicorn.Config(app, host=host, port=args.port, log_level="warning", log_config=None)
     )
@@ -220,6 +266,12 @@ def main(argv: list[str] | None = None) -> None:
     deadline = time.time() + 10
     while not server.started and time.time() < deadline:
         time.sleep(0.05)
+
+    if not server.started:
+        server.should_exit = True
+        thread.join(timeout=3)
+        report_port_conflict(args.port, silent=args.silent)
+        return
 
     print("Gate Theme Studio")
     print(f"  editor : {url}")

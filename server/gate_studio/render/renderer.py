@@ -62,6 +62,7 @@ def render_panel(
     *,
     history: History | None = None,
     temperature_unit: str = "c",
+    static_only: bool = False,
 ) -> Image.Image:
     values = values or {}
     now = now or datetime.now()
@@ -83,6 +84,13 @@ def render_panel(
 
     draw = ImageDraw.Draw(canvas)
     for layer in panel.layers:
+        if static_only and (
+            (layer.kind == "metric" and layer.widget == "number")
+            or (layer.kind == "text" and layer.source in ("clock", "date"))
+        ):
+            # These become native text items on the device.  Leaving them out
+            # keeps the uploaded background free of stale duplicate values.
+            continue
         _draw_layer(draw, layer, values, now, history, temperature_unit)
     return canvas
 
@@ -95,10 +103,19 @@ def render_all(
     *,
     history: History | None = None,
     temperature_unit: str = "c",
+    static_only: bool = False,
 ) -> list[Image.Image]:
     now = now or datetime.now()
     return [
-        render_panel(panel, values, media_dir, now, history=history, temperature_unit=temperature_unit)
+        render_panel(
+            panel,
+            values,
+            media_dir,
+            now,
+            history=history,
+            temperature_unit=temperature_unit,
+            static_only=static_only,
+        )
         for panel in theme.panels
     ]
 

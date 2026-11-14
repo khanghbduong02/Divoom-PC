@@ -87,7 +87,8 @@ browser.
   `PicNum` = frame count (keep well under 60), `PicOffset` per frame, `LcdArray` =
   a length-5 mask selecting the panel(s).
 - **PicID**: must be monotonically increasing per device. Send
-  `Draw/ResetHttpGifId` once at startup and increment from there. Oversized or
+  `Draw/ResetHttpGifId` at startup, increment from there, and reset before the
+  firmware's frame cache fills (roughly 100 consecutive uploads). Oversized or
   repeated IDs leave the panel stuck on "loading".
 - **Panel addressing** is per-panel for frames; some device commands want
   `LcdIndex` (0–4) instead. Keep both helpers.

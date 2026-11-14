@@ -4,8 +4,9 @@ A designer-first editor for the **Divoom Times Gate** (5 × 128×128 LCD). Desig
 panel visually in the browser; the app keeps the display updated over your LAN.
 
 Local web app: one small Windows app + a browser UI. Same URL works from a phone on the
-same Wi-Fi. Nothing is hosted; the device API is LAN-only (see
-[`divoom-theme-studio-brief.md`](divoom-theme-studio-brief.md)).
+same Wi-Fi. The editor is served by the app on your PC, not by a hosted dashboard; the
+only online piece is the static [download page](https://site-5b02d7b84842479d9d6e7cd6dfc76009.freebuff.page).
+The device API is LAN-only (see [`divoom-theme-studio-brief.md`](divoom-theme-studio-brief.md)).
 
 **Status:** milestones M1 (transport proof), M2 (MVP) and the always-on parts of M4
 (tray, autostart, automatic re-push, frame skipping) are implemented.
@@ -14,8 +15,10 @@ same Wi-Fi. Nothing is hosted; the device API is LAN-only (see
 
 ## For users (no Python, no terminal)
 
-You need one file: **`GateThemeStudio.exe`** (ask whoever built it for you, or build it
-yourself with the steps below).
+You need one file: **`GateThemeStudio.exe`**. Download it from the
+[public download page](https://site-5b02d7b84842479d9d6e7cd6dfc76009.freebuff.page)
+or the [latest GitHub release](https://github.com/khanghbduong02/Divoom-PC/releases/latest/download/GateThemeStudio.exe).
+The source checkout and exe build steps are below for development.
 
 1. **Put it anywhere** you like — Desktop, Documents, a folder on `D:`. There is no
    installer and nothing else to download; the sensor helper is inside the exe.
@@ -148,6 +151,9 @@ python -m pytest
 
 Covers transport (against a fake gate), renderer geometry, sensor collection, presets,
 config migration and the HTTP/WebSocket API. No hardware or elevation needed.
+
+For copy-paste UI, API, exe and real-device checks, see
+[`MANUAL_TESTING.md`](MANUAL_TESTING.md).
 
 Quick manual checks:
 

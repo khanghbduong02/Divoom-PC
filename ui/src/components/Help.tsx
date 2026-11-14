@@ -73,7 +73,10 @@ export default function Help({ open, onClose }: Props) {
             <h3>2. Connect the display</h3>
             <ol className="numbered">
               <li>Put the Times Gate on the same Wi-Fi as this PC and keep it powered on.</li>
-              <li>Close the Divoom phone app while you work here — it holds the display’s connection.</li>
+              <li>
+                The Divoom phone app can stay open. If it changes a screen, this app pauses that
+                screen instead of overwriting it.
+              </li>
               <li>
                 Click <em>Connect a display</em> in the top bar, press <em>Find displays</em>, and
                 pick the Gate that appears.
@@ -97,6 +100,13 @@ export default function Help({ open, onClose }: Props) {
               keeps its sensor readings live. Every reading can be a big value, a progress bar, or a
               line graph of the last 5 minutes to 3 hours, and temperatures can be shown in Celsius
               or Fahrenheit from Settings.
+            </p>
+            <p className="hint">
+              If you change a screen from the Divoom app, Gate Theme Studio notices within a few
+              seconds and pauses that screen so the two do not fight. Press <strong>Resume</strong>{" "}
+              in the right panel when you want it back, or <strong>Apply</strong> to take the screen
+              back immediately. You can also pause a screen yourself from the same panel. This watch
+              uses Divoom's cloud and can be turned off in Settings.
             </p>
           </section>
 
@@ -128,8 +138,9 @@ export default function Help({ open, onClose }: Props) {
             <h3>If something looks wrong</h3>
             <p>
               Panels stuck on “loading” or the display not changing? Open <em>Troubleshooting</em> in
-              the top bar: it shows the last reply from the display and what to try. The device only
-              accepts one connection, so the phone app is the usual culprit.
+              the top bar: it shows the last reply from the display and what to try. If a panel says
+              <em>updates paused</em>, the Divoom app changed it; press <strong>Resume</strong> or{" "}
+              <strong>Apply</strong> when you want this app to own it again.
             </p>
             <p>
               CPU temperature stays at <code>--</code>? Windows does not let normal apps read it.

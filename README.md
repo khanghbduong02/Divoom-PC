@@ -32,8 +32,8 @@ yourself with the steps below).
    (bottom-right of the taskbar, possibly behind the `^` arrow).
 5. **Connect the display** once:
    - Put the Times Gate on the same Wi-Fi as the PC and leave it powered on.
-   - **Close the Divoom phone app** while you set this up — the display only accepts one
-     connection and the phone app holds it.
+   - If probing fails, close the Divoom phone app while you set this up — the display can
+     be holding its connection. After setup it can stay open.
    - In the editor press **Connect a display**, then **Find displays**, then pick the Gate
      that shows up. If it is not found, type the IP the Divoom app shows and press
      **Probe**.
@@ -50,8 +50,8 @@ The app **starts with Windows** and keeps the display live. Closing the browser 
 not stop it. To stop it for good, right-click the tray icon and choose **Quit Gate Theme
 Studio** (or untick *Start with Windows* in **Settings**).
 
-With the tray icon you can also: open the editor, send immediately, pause/resume updates,
-and open Settings.
+With the tray icon you can also: open the editor, send immediately, pause/resume all
+updates, and open Settings.
 
 **Use it from your phone:** Settings → *Let other devices on my network open the editor*
 → restart the app → open the phone address it prints. The link contains a key, so treat
@@ -210,13 +210,13 @@ fresh machine shows a SmartScreen prompt.
   now**, a **progress bar**, or a **line graph** of the past 5 minutes to 3 hours
   (history builds while the app runs).
 - **Inspector** — per panel: background colour or image (fit / crop / stretch, dim),
-  accent colour, **Theme for this panel only**, **Remove all layers from this panel**.
-  Per layer: metric, widget (big number or bar), position, size, colour, text sizing,
-  decimals, unit, gauge min/max, alignment.
-- **Toolbar** — choose a theme and press **All panels**; **Send** forces an immediate
-  update; **Help** has the end-user guide; **Settings** controls updates, autostart,
-  network access and whether temperatures read **°C or °F** (all panels);
-  **Troubleshooting** shows the last device reply verbatim.
+  accent colour, **Theme for this panel only**, **Pause updates for this screen**,
+  **Remove all layers from this panel**. Per layer: metric, widget (big number or bar),
+  position, size, colour, text sizing, decimals, unit, gauge min/max, alignment.
+- **Toolbar** — choose a theme and press **All panels**; **Send all** forces an immediate
+  update of all five panels; **Help** has the end-user guide; **Settings** controls
+  updates, Divoom-app hand-off, autostart, network access and whether temperatures read
+  **°C or °F** (all panels); **Troubleshooting** shows the last device reply verbatim.
 
 Edits autosave to `config.json` as a draft; the display keeps the last applied design.
 The update loop re-renders that applied design every 2 s (configurable) so sensor values
@@ -224,6 +224,22 @@ stay live, sends only panels whose pixels changed, retries after the display reb
 and clears its cache once a minute so a display that was power-cycled still gets a fresh
 frame. Draft changes reach the display only through **Apply** (one panel) or
 **Send all**.
+
+### When the Divoom app changes a screen
+
+Leave the phone app open. Every few seconds the agent reads the Divoom-app layout from
+Divoom's cloud. If the phone app puts a face on a screen, that screen gets a **paused**
+badge and stops receiving frames, so the two apps cannot overwrite each other. Press
+**Resume** in the inspector to hand it back, or **Apply** to take it back immediately;
+**Send all** resumes every screen. **Pause updates for this screen** does the same
+without waiting for the phone app.
+
+No Divoom account is needed. The local API cannot read pixels or the current face back,
+so this uses the app-side cloud state; changes another program makes only through the
+local API are not visible unless that program signals the pause endpoint
+(`POST /api/panels/<0-4>/pause` with the editor token). If the cloud is unreachable the
+watch reports that and normal sending continues; paused screens stay paused until you
+resume them. The watch and check interval are in **Settings → Other apps**.
 
 ## Metrics
 

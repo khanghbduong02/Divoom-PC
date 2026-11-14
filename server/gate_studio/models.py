@@ -7,6 +7,7 @@ and the on-disk config file, so they stay deliberately flat and versioned.
 from __future__ import annotations
 
 import re
+import time
 import uuid
 from typing import Literal
 
@@ -196,6 +197,8 @@ class DeviceConfig(BaseModel):
     protocol: Literal["hw400", "hw402"] = "hw400"
     local_token: int | None = None
     name: str | None = None
+    #: Divoom's id, needed to read the app-side screen layout from the cloud
+    device_id: int | None = None
 
     @property
     def configured(self) -> bool:
@@ -211,6 +214,9 @@ class AppSettings(BaseModel):
     #: keep sensor readings live in the already-applied design
     auto_push: bool = True
     push_interval: float = 2.0
+    #: pause a panel when the Divoom app changes it, so the two do not fight
+    external_watch: bool = True
+    external_check_interval: float = 5.0
     allow_lan: bool = False
     autostart: bool = True
     #: how temperature readings are shown on the panels
@@ -226,8 +232,22 @@ class AppSettings(BaseModel):
     def _validate_push_interval(cls, value: float) -> float:
         return max(0.5, min(60.0, value))
 
+    @field_validator("external_check_interval")
+    @classmethod
+    def _validate_external_interval(cls, value: float) -> float:
+        return max(2.0, min(60.0, value))
 
-CONFIG_VERSION = 2
+
+CONFIG_VERSION = 3
+
+
+class PausedPanel(BaseModel):
+    """A screen Gate Theme Studio must leave alone until explicitly resumed."""
+
+    panel: int = Field(ge=0, le=PANEL_COUNT - 1)
+    source: Literal["external", "manual"] = "manual"
+    reason: str = ""
+    since: float = Field(default_factory=time.time)
 
 
 class AppConfig(BaseModel):
@@ -238,3 +258,5 @@ class AppConfig(BaseModel):
     theme: Theme = Field(default_factory=lambda: Theme(name="Untitled"))
     #: the design currently on the display (sensor values keep updating in it)
     applied_theme: Theme | None = None
+    #: screens another app currently owns; persisted so a restart cannot overwrite them
+    paused_panels: list[PausedPanel] = Field(default_factory=list)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { Align, Layer, MetricKey, Panel, PresetMeta, Widget } from "../types";
+import type { Align, Layer, MetricKey, Panel, PausedPanel, PresetMeta, Widget } from "../types";
 import { METRICS, isTemperatureMetric, metricMeta } from "../types";
 import { mediaUrl } from "../api";
 import { SendIcon } from "./icons";
@@ -12,6 +12,7 @@ interface Props {
   presets: PresetMeta[];
   uploading: boolean;
   applying: boolean;
+  pausedPanel: PausedPanel | null;
   temperatureUnit: "c" | "f";
   recentColors: string[];
   onColorUsed: (color: string) => void;
@@ -21,6 +22,8 @@ interface Props {
   onUpload: (file: File) => void;
   onApplyPanelPreset: (presetId: string) => void;
   onApplyPanel: () => void;
+  onPausePanel: () => void;
+  onResumePanel: () => void;
   onClearLayers: () => void;
 }
 
@@ -167,6 +170,7 @@ export default function Inspector({
   presets,
   uploading,
   applying,
+  pausedPanel,
   temperatureUnit,
   recentColors,
   onColorUsed,
@@ -176,6 +180,8 @@ export default function Inspector({
   onUpload,
   onApplyPanelPreset,
   onApplyPanel,
+  onPausePanel,
+  onResumePanel,
   onClearLayers,
 }: Props) {
   const [themeChoice, setThemeChoice] = useState("");
@@ -203,8 +209,27 @@ export default function Inspector({
         </div>
         <p className="hint">
           Changes stay in the editor. <strong>Apply</strong> sends this panel only;{" "}
-          <strong>Send all</strong> sends every panel.
+          <strong>Send all</strong> sends every panel. Applying a paused screen takes it back.
         </p>
+
+        {pausedPanel ? (
+          <div className="pause-banner" role="status">
+            <div>
+              <strong>Updates paused</strong>
+              <p>
+                {pausedPanel.reason ||
+                  "This screen belongs to another app right now. Gate Theme Studio will not overwrite it."}
+              </p>
+            </div>
+            <button type="button" className="button-small" onClick={onResumePanel}>
+              Resume
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="button-quiet pause-link" onClick={onPausePanel}>
+            Pause updates for this screen
+          </button>
+        )}
 
         <h2 className="section-title">Panel appearance</h2>
 

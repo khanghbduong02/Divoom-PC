@@ -20,6 +20,7 @@ export default function Settings({ open, onClose }: Props) {
   const [settings, setSettings] = useState<SettingsModel | null>(null);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [interval, setIntervalText] = useState("2");
+  const [watchInterval, setWatchInterval] = useState("5");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export default function Settings({ open, onClose }: Props) {
         const [config, info] = await Promise.all([api.getConfig(), api.getSystem()]);
         setSettings(config.settings);
         setIntervalText(String(config.settings.push_interval));
+        setWatchInterval(String(config.settings.external_check_interval));
         setSystem(info);
         setError(null);
         setNote(null);
@@ -142,6 +144,64 @@ export default function Settings({ open, onClose }: Props) {
                 />
                 <span className="hint">seconds</span>
               </div>
+            </section>
+
+            <section className="step">
+              <h3>Other apps</h3>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={settings.external_watch}
+                  disabled={busy}
+                  onChange={(event) => void save({ external_watch: event.target.checked })}
+                />
+                <span>
+                  Pause screens changed by the Divoom app
+                  <em>
+                    Checks Divoom's cloud for the phone app's screen layout. When a screen changes,
+                    Gate Theme Studio stops updating that screen until you resume it.
+                  </em>
+                </span>
+              </label>
+              <div className="inline-row">
+                <label htmlFor="watch-interval">Check every</label>
+                <input
+                  id="watch-interval"
+                  type="number"
+                  min={2}
+                  max={60}
+                  step={1}
+                  value={watchInterval}
+                  disabled={busy || !settings.external_watch}
+                  onChange={(event) => setWatchInterval(event.target.value)}
+                  onBlur={() => {
+                    const value = Number(watchInterval);
+                    if (!Number.isFinite(value)) {
+                      setWatchInterval(String(settings.external_check_interval));
+                      return;
+                    }
+                    const clamped = Math.min(60, Math.max(2, value));
+                    setWatchInterval(String(clamped));
+                    if (clamped !== settings.external_check_interval) {
+                      void save({ external_check_interval: clamped });
+                    }
+                  }}
+                />
+                <span className="hint">seconds</span>
+              </div>
+              {system?.external_watch && (
+                <p className="hint">
+                  {system.external_watch.enabled
+                    ? system.external_watch.ok
+                      ? `Watching Divoom's cloud — last checked ${when(
+                          system.external_watch.last_checked,
+                        )}.`
+                      : `Watch unavailable: ${
+                          system.external_watch.message ?? "not checked yet"
+                        }. Screens are not paused automatically until it reconnects.`
+                    : "The Divoom-app watch is off; use Pause on a panel to hand it over manually."}
+                </p>
+              )}
             </section>
 
             <section className="step">

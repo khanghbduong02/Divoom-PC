@@ -12,6 +12,7 @@ from PIL import Image
 
 from gate_studio.api import create_app
 from gate_studio.config import ConfigStore
+from gate_studio.device.external import ExternalSnapshot
 from gate_studio.models import Layer
 
 
@@ -128,6 +129,70 @@ def test_send_all_applies_every_panel(client: TestClient, monkeypatch) -> None:
     assert state.applied_theme.panels[2].background.color == "#CCCCCC"
     assert state.config.applied_theme is not None
     assert state.config.applied_theme.panels[2].background.color == "#CCCCCC"
+
+
+def test_paused_panel_round_trip_and_preview_state(client: TestClient, store: ConfigStore) -> None:
+    paused = client.post("/api/panels/1/pause", json={"paused": True})
+    assert paused.status_code == 200
+    body = paused.json()["paused_panels"]
+    assert body[0]["panel"] == 1
+    assert body[0]["source"] == "manual"
+    assert json.loads(store.config_path.read_text(encoding="utf-8"))["paused_panels"][0][
+        "panel"
+    ] == 1
+
+    with client.websocket_connect(f"/ws?token={store.token()}") as websocket:
+        tick = websocket.receive_json()
+    assert [item["panel"] for item in tick["paused"]] == [1]
+
+    resumed = client.post("/api/panels/1/pause", json={"paused": False})
+    assert resumed.json()["paused_panels"] == []
+
+
+def test_send_resumes_a_paused_panel(client: TestClient, monkeypatch) -> None:
+    assert client.post("/api/panels/1/pause", json={"paused": True}).status_code == 200
+    monkeypatch.setattr("gate_studio.api._push", lambda *args, **kwargs: [])
+    assert client.post("/api/send", json={"panels": [1]}).status_code == 200
+    assert client.app.state.gate.paused_snapshot() == []
+
+
+def test_external_change_pauses_only_that_panel(client: TestClient) -> None:
+    state = client.app.state.gate
+    first = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple((0, 100 + index, "") for index in range(5)),
+    )
+    changed_faces = list(first.faces)
+    changed_faces[2] = (0, 999, "")
+    second = ExternalSnapshot(
+        channel_type=1,
+        clock_id=581,
+        preset=973749,
+        faces=tuple(changed_faces),
+    )
+
+    assert state.apply_external_snapshot(first) == []
+    assert state.apply_external_snapshot(second) == [2]
+    assert [item["panel"] for item in state.paused_snapshot()] == [2]
+    assert state.paused_snapshot()[0]["source"] == "external"
+
+
+def test_pause_validates_the_panel_index(client: TestClient) -> None:
+    assert client.post("/api/panels/9/pause", json={"paused": True}).status_code == 422
+
+
+def test_external_watch_settings_round_trip(client: TestClient) -> None:
+    body = client.put(
+        "/api/config/settings",
+        json={"external_watch": False, "external_check_interval": 12},
+    ).json()
+    assert body["settings"]["external_watch"] is False
+    assert body["settings"]["external_check_interval"] == 12
+    stored = client.get("/api/config").json()["settings"]
+    assert stored["external_watch"] is False
+    assert stored["external_check_interval"] == 12
 
 
 def test_media_upload_then_serve(client: TestClient) -> None:

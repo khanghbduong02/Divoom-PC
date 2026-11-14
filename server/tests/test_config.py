@@ -34,6 +34,24 @@ def test_v1_config_turns_updates_on(tmp_path: Path) -> None:
     assert config.device.host == "192.168.1.5"
 
 
+def test_v2_config_keeps_its_update_choice(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "settings": {"auto_push": False, "push_interval": 4.0},
+                "theme": {"name": "Old", "panels": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = ConfigStore(tmp_path).load()
+    assert config.settings.auto_push is False
+    assert config.settings.push_interval == 4.0
+    assert config.settings.external_watch is True
+
+
 def test_save_is_atomic_and_reloadable(tmp_path: Path) -> None:
     store = ConfigStore(tmp_path)
     config = store.load()

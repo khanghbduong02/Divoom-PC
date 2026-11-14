@@ -1,5 +1,6 @@
 import type {
   DeviceSummary,
+  PausedPanel,
   PresetMeta,
   ProbeOutcome,
   SendResult,
@@ -137,6 +138,16 @@ export const api = {
     request<{ results: SendResult[] }>("/api/send", {
       method: "POST",
       body: JSON.stringify({ panels: panels ?? null }),
+    }),
+  setPanelPaused: (
+    panel: number,
+    paused: boolean,
+    source: "external" | "manual" = "manual",
+    reason = "",
+  ) =>
+    request<{ paused_panels: PausedPanel[] }>(`/api/panels/${panel}/pause`, {
+      method: "POST",
+      body: JSON.stringify({ paused, source, reason }),
     }),
   getSensors: () => request<{ values: SensorValues }>("/api/sensors"),
   diagnostics: () =>

@@ -302,8 +302,8 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
         )}
 
         <p className="modal-footnote">
-          Tip: close the Divoom phone app while you use this editor. Two apps sending to the
-          same display makes the panels flicker.
+          Tip: the Divoom phone app can stay open. If it changes a screen, Gate Theme Studio
+          pauses that screen to avoid a fight; resume it from the inspector when you want it back.
         </p>
       </div>
     </div>

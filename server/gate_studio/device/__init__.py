@@ -2,6 +2,7 @@
 
 from .discovery import discover, discover_cloud, scan_subnet
 from .errors import DeviceError, DeviceErrorKind
+from .external import ExternalSnapshot, ExternalWatchError, diff_snapshots, fetch_snapshot
 from .transport import (
     ENDPOINTS,
     HW400,
@@ -21,10 +22,14 @@ __all__ = [
     "DeviceError",
     "DeviceErrorKind",
     "DeviceTransport",
+    "ExternalSnapshot",
+    "ExternalWatchError",
     "FrameIds",
     "ProbeOutcome",
+    "diff_snapshots",
     "discover",
     "discover_cloud",
+    "fetch_snapshot",
     "lcd_mask",
     "probe_endpoint",
     "probe_host",

@@ -97,6 +97,21 @@ export interface DeviceSummary {
   protocol: "hw400" | "hw402";
   local_token_set: boolean;
   name: string | null;
+  device_id: number | null;
+}
+
+export interface PausedPanel {
+  panel: number;
+  source: "external" | "manual";
+  reason: string;
+  since: number;
+}
+
+export interface ExternalWatchStatus {
+  enabled: boolean;
+  ok: boolean;
+  last_checked: number | null;
+  message: string | null;
 }
 
 export interface Settings {
@@ -104,6 +119,8 @@ export interface Settings {
   push_interval: number;
   allow_lan: boolean;
   auto_push: boolean;
+  external_watch: boolean;
+  external_check_interval: number;
   autostart: boolean;
   temperature_unit: "c" | "f";
 }
@@ -118,6 +135,8 @@ export interface SystemInfo {
   push_interval: number;
   last_push_at: number | null;
   skipped_frames: number;
+  paused_panels: PausedPanel[];
+  external_watch: ExternalWatchStatus;
 }
 
 export interface PresetMeta {

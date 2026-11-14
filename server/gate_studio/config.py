@@ -91,13 +91,14 @@ class ConfigStore:
 
     @staticmethod
     def _migrate(raw: object) -> object:
-        """Older configs predate always-on updates; enable them on upgrade."""
+        """Migrate old config shapes without clobbering newer preferences."""
         if not isinstance(raw, dict):
             return raw
-        if int(raw.get("schema_version") or 1) >= CONFIG_VERSION:
+        version = int(raw.get("schema_version") or 1)
+        if version >= CONFIG_VERSION:
             return raw
         settings = raw.get("settings")
-        if isinstance(settings, dict):
+        if version < 2 and isinstance(settings, dict):
             # v1 had no switch for this at all, so its stored False was just the default
             settings["auto_push"] = True
             settings.setdefault("push_interval", 2.0)

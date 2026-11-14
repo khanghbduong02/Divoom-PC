@@ -1,16 +1,24 @@
 import { useRef, useState } from "react";
-import type { Panel } from "../types";
+import type { Panel, PausedPanel } from "../types";
 import { GripIcon } from "./icons";
 
 interface Props {
   panels: Panel[];
   previews: string[];
   selected: number;
+  pausedPanels: PausedPanel[];
   onSelect: (index: number) => void;
   onReorder: (from: number, to: number) => void;
 }
 
-export default function PanelRail({ panels, previews, selected, onSelect, onReorder }: Props) {
+export default function PanelRail({
+  panels,
+  previews,
+  selected,
+  pausedPanels,
+  onSelect,
+  onReorder,
+}: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<number | null>(null);
@@ -66,12 +74,15 @@ export default function PanelRail({ panels, previews, selected, onSelect, onReor
     <section className="panel-list">
       <h2 className="section-title">Panels</h2>
       <div className="panel-items" ref={listRef}>
-        {panels.map((panel, index) => (
+        {panels.map((panel, index) => {
+          const paused = pausedPanels.find((item) => item.panel === index);
+          return (
           <div
             key={index}
             className={[
               "panel-item",
               index === selected ? "is-selected" : "",
+              paused ? "is-paused" : "",
               dragging === index ? "is-dragging" : "",
               dropTarget === index && dragging !== null && dragging !== index ? "is-drop-target" : "",
             ]
@@ -79,7 +90,7 @@ export default function PanelRail({ panels, previews, selected, onSelect, onReor
               .join(" ")}
             role="button"
             tabIndex={0}
-            aria-label={`Panel ${index + 1}, ${panel.layers.length} layers`}
+            aria-label={`Panel ${index + 1}, ${panel.layers.length} layers${paused ? ", updates paused" : ""}`}
             onClick={() => onSelect(index)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -108,14 +119,17 @@ export default function PanelRail({ panels, previews, selected, onSelect, onReor
 
             <span className="panel-caption">
               Panel {index + 1}
-              <em>
-                {panel.layers.length === 0
-                  ? "empty"
-                  : `${panel.layers.length} ${panel.layers.length === 1 ? "layer" : "layers"}`}
+              <em className={paused ? "panel-paused" : undefined}>
+                {paused
+                  ? "updates paused"
+                  : panel.layers.length === 0
+                    ? "empty"
+                    : `${panel.layers.length} ${panel.layers.length === 1 ? "layer" : "layers"}`}
               </em>
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
       <p className="panel-hint">Drag the dots to reorder panels.</p>
     </section>

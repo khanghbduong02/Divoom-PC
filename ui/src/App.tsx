@@ -5,6 +5,7 @@ import type {
   Layer,
   MetricKey,
   Panel,
+  PausedPanel,
   PresetMeta,
   SensorValues,
   Theme,
@@ -119,6 +120,7 @@ export default function App() {
   const [selectedPanel, setSelectedPanel] = useState(0);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [applyingPanel, setApplyingPanel] = useState(false);
+  const [pausedPanels, setPausedPanels] = useState<PausedPanel[]>([]);
   const [recentColors, setRecentColors] = useState<string[]>(loadRecentColors);
   const [wire, setWire] = useState<WireStatus>("connecting");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -212,6 +214,7 @@ export default function App() {
             sensors: SensorValues;
             panels: { index: number; png: string }[];
             device: DeviceSummary;
+            paused?: PausedPanel[];
           };
           if (message.type !== "tick") return;
           setPreviews((current) => {
@@ -223,6 +226,7 @@ export default function App() {
           });
           setSensors(message.sensors);
           setDevice(message.device);
+          if (Array.isArray(message.paused)) setPausedPanels(message.paused);
         } catch {
           // a malformed tick is not worth surfacing; the next one arrives shortly
         }
@@ -382,6 +386,7 @@ export default function App() {
     try {
       const reply = await api.send([selectedPanel]);
       const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
+      setPausedPanels((current) => current.filter((item) => item.panel !== selectedPanel));
       setNotice({
         tone: "ok",
         text: `Applied panel ${selectedPanel + 1} to the display, ${bytes} bytes.`,
@@ -405,6 +410,7 @@ export default function App() {
     try {
       const reply = await api.send();
       const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
+      setPausedPanels([]);
       setNotice({
         tone: "ok",
         text: `Sent to ${reply.results.length} panel(s), ${bytes} bytes in total.`,
@@ -413,6 +419,21 @@ export default function App() {
       setNotice(noticeFrom(error));
     } finally {
       setSending(false);
+    }
+  };
+
+  const setPanelPaused = async (panelIndex: number, paused: boolean) => {
+    try {
+      const reply = await api.setPanelPaused(panelIndex, paused);
+      setPausedPanels(reply.paused_panels);
+      setNotice({
+        tone: "info",
+        text: paused
+          ? `Panel ${panelIndex + 1} is paused. Gate Theme Studio will leave it alone until you resume.`
+          : `Panel ${panelIndex + 1} updates resumed.`,
+      });
+    } catch (error) {
+      setNotice(noticeFrom(error));
     }
   };
 
@@ -473,6 +494,7 @@ export default function App() {
             panels={theme.panels}
             previews={previews}
             selected={selectedPanel}
+            pausedPanels={pausedPanels}
             onSelect={(index) => {
               setSelectedPanel(index);
               setSelectedLayerId(null);
@@ -569,10 +591,13 @@ export default function App() {
             presets={presets}
             uploading={uploading}
             applying={applyingPanel}
+            pausedPanel={pausedPanels.find((item) => item.panel === selectedPanel) ?? null}
             temperatureUnit={temperatureUnit}
             recentColors={recentColors}
             onColorUsed={rememberColor}
             onApplyPanel={() => void applyPanel()}
+            onPausePanel={() => void setPanelPaused(selectedPanel, true)}
+            onResumePanel={() => void setPanelPaused(selectedPanel, false)}
             onLayer={(patch) => selectedLayer && updateLayer(selectedLayer.id, patch)}
             onPanel={(patch) => updatePanel(selectedPanel, (current) => ({ ...current, ...patch }))}
             onBackground={(patch) =>

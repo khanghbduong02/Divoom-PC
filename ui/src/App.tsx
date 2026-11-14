@@ -87,6 +87,22 @@ function makeTextLayer(stacked: number): Layer {
   };
 }
 
+const RECENT_COLORS_KEY = "gate-studio.recent-colors";
+
+function loadRecentColors(): string[] {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(RECENT_COLORS_KEY) ?? "[]");
+    if (Array.isArray(stored)) {
+      return stored
+        .filter((color): color is string => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color))
+        .slice(0, 8);
+    }
+  } catch {
+    // private mode or a corrupt value: start empty
+  }
+  return [];
+}
+
 function noticeFrom(error: unknown): Notice {
   if (error instanceof ApiFailure) {
     return { tone: "error", text: error.message, hint: error.hint, raw: error.raw };
@@ -102,6 +118,8 @@ export default function App() {
   const [sensors, setSensors] = useState<SensorValues>({});
   const [selectedPanel, setSelectedPanel] = useState(0);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [applyingPanel, setApplyingPanel] = useState(false);
+  const [recentColors, setRecentColors] = useState<string[]>(loadRecentColors);
   const [wire, setWire] = useState<WireStatus>("connecting");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [sending, setSending] = useState(false);
@@ -324,8 +342,8 @@ export default function App() {
         tone: "info",
         text:
           panelIndex === undefined
-            ? `Loaded “${reply.theme.name}” on all five panels. Press “Send to display” when you're happy with it.`
-            : `Applied a theme to panel ${panelIndex + 1}. The other panels are unchanged.`,
+            ? `Loaded “${reply.theme.name}” into the editor for all five panels. Press “Send all” to put it on the Gate.`
+            : `Loaded a theme into panel ${panelIndex + 1} in the editor. Press Apply above to send it; other panels are unchanged.`,
       });
     } catch (error) {
       setNotice(noticeFrom(error));
@@ -343,6 +361,36 @@ export default function App() {
     });
     setSelectedPanel(to);
     setSelectedLayerId(null);
+  };
+
+  const rememberColor = useCallback((color: string) => {
+    const normalized = color.toUpperCase();
+    setRecentColors((current) => {
+      const next = [normalized, ...current.filter((entry) => entry !== normalized)].slice(0, 8);
+      try {
+        window.localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(next));
+      } catch {
+        // not fatal: the palette simply will not survive a reload
+      }
+      return next;
+    });
+  }, []);
+
+  const applyPanel = async () => {
+    setApplyingPanel(true);
+    setNotice(null);
+    try {
+      const reply = await api.send([selectedPanel]);
+      const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
+      setNotice({
+        tone: "ok",
+        text: `Applied panel ${selectedPanel + 1} to the display, ${bytes} bytes.`,
+      });
+    } catch (error) {
+      setNotice(noticeFrom(error));
+    } finally {
+      setApplyingPanel(false);
+    }
   };
 
   const clearLayers = () => {
@@ -516,10 +564,15 @@ export default function App() {
         <aside className="properties">
           <Inspector
             panel={panel}
+            panelIndex={selectedPanel}
             layer={selectedLayer}
             presets={presets}
             uploading={uploading}
+            applying={applyingPanel}
             temperatureUnit={temperatureUnit}
+            recentColors={recentColors}
+            onColorUsed={rememberColor}
+            onApplyPanel={() => void applyPanel()}
             onLayer={(patch) => selectedLayer && updateLayer(selectedLayer.id, patch)}
             onPanel={(patch) => updatePanel(selectedPanel, (current) => ({ ...current, ...patch }))}
             onBackground={(patch) =>

@@ -92,9 +92,15 @@ export default function Toolbar({
       <button type="button" className="button-quiet icon-text" onClick={onDiagnostics} title="Troubleshooting">
         <span className="label-wide">Troubleshooting</span>
       </button>
-      <button type="button" className="button-primary" onClick={onSend} disabled={sending}>
+      <button
+        type="button"
+        className="button-primary"
+        onClick={onSend}
+        disabled={sending}
+        title="Apply the current design to all five panels"
+      >
         <SendIcon />
-        {sending ? "Sending…" : "Send"}
+        {sending ? "Sending…" : "Send all"}
       </button>
     </header>
   );

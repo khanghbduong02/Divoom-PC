@@ -40,9 +40,11 @@ yourself with the steps below).
    - That is permanent — the app reconnects by itself from then on.
 6. **Design.** Pick a panel, choose a reading from the metric list and press
    **Add metric**, or **Add text** for a label. Drag things on the panel to move them,
-   drag a corner to resize. Drag the dots next to a panel to reorder panels.
-7. **Nothing to save or send.** Edits are saved as you type and sent to the display
-   within a couple of seconds. The **Send** button is only for an instant refresh.
+   drag a corner to resize. Drag the dots next to a panel to reorder panels. Colours can
+   be picked, typed as a `#RRGGBB` value, or chosen from the recent-colour swatches.
+7. **Apply when you like it.** Edits are saved in the editor but do not touch the Gate
+   until you press **Apply** in the right panel (that screen only) or **Send all** in the
+   top bar (all five). The design already on the Gate keeps its sensor readings live.
 
 The app **starts with Windows** and keeps the display live. Closing the browser tab does
 not stop it. To stop it for good, right-click the tray icon and choose **Quit Gate Theme
@@ -216,9 +218,12 @@ fresh machine shows a SmartScreen prompt.
   network access and whether temperatures read **°C or °F** (all panels);
   **Troubleshooting** shows the last device reply verbatim.
 
-Edits autosave to `config.json`. The update loop re-renders every 2 s (configurable),
-sends only panels whose pixels changed, retries after the display reboots, and clears
-its cache once a minute so a display that was power-cycled still gets a fresh frame.
+Edits autosave to `config.json` as a draft; the display keeps the last applied design.
+The update loop re-renders that applied design every 2 s (configurable) so sensor values
+stay live, sends only panels whose pixels changed, retries after the display reboots,
+and clears its cache once a minute so a display that was power-cycled still gets a fresh
+frame. Draft changes reach the display only through **Apply** (one panel) or
+**Send all**.
 
 ## Metrics
 

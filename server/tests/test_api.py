@@ -87,6 +87,49 @@ def test_send_without_device_explains_the_problem(client: TestClient) -> None:
     assert "wizard" in (error["hint"] or "").lower()
 
 
+def test_editing_the_draft_does_not_change_the_applied_design(client: TestClient) -> None:
+    state = client.app.state.gate
+    original = state.applied_theme.panels[0].background.color
+
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["background"]["color"] = "#123456"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    assert state.config.theme.panels[0].background.color == "#123456"
+    assert state.applied_theme.panels[0].background.color == original
+
+
+def test_send_applies_only_the_requested_panel(client: TestClient, monkeypatch) -> None:
+    state = client.app.state.gate
+    before_other = state.applied_theme.panels[0].background.color
+
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["background"]["color"] = "#AAAAAA"
+    theme["panels"][1]["background"]["color"] = "#BBBBBB"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    monkeypatch.setattr("gate_studio.api._push", lambda *args, **kwargs: [])
+    response = client.post("/api/send", json={"panels": [1]})
+    assert response.status_code == 200
+
+    assert state.applied_theme.panels[0].background.color == before_other
+    assert state.applied_theme.panels[1].background.color == "#BBBBBB"
+
+
+def test_send_all_applies_every_panel(client: TestClient, monkeypatch) -> None:
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][2]["background"]["color"] = "#CCCCCC"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    monkeypatch.setattr("gate_studio.api._push", lambda *args, **kwargs: [])
+    assert client.post("/api/send").status_code == 200
+
+    state = client.app.state.gate
+    assert state.applied_theme.panels[2].background.color == "#CCCCCC"
+    assert state.config.applied_theme is not None
+    assert state.config.applied_theme.panels[2].background.color == "#CCCCCC"
+
+
 def test_media_upload_then_serve(client: TestClient) -> None:
     buffer = io.BytesIO()
     Image.new("RGB", (32, 32), (10, 20, 30)).save(buffer, format="PNG")

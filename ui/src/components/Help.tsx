@@ -91,10 +91,12 @@ export default function Help({ open, onClose }: Props) {
               each one afterwards.
             </p>
             <p className="hint">
-              No Send button needed: changes are saved as you type and pushed to the display every
-              couple of seconds. <em>Send</em> is there for an instant refresh. Every reading can be
-              a big value, a progress bar, or a line graph of the last 5 minutes to 3 hours, and
-              temperatures can be shown in Celsius or Fahrenheit from Settings.
+              Edits are saved as you type but stay in the editor until you send them: use{" "}
+              <strong>Apply</strong> in the right panel to update only the selected screen, or{" "}
+              <strong>Send all</strong> in the top bar for all five. The design already on the Gate
+              keeps its sensor readings live. Every reading can be a big value, a progress bar, or a
+              line graph of the last 5 minutes to 3 hours, and temperatures can be shown in Celsius
+              or Fahrenheit from Settings.
             </p>
           </section>
 

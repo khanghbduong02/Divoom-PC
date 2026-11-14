@@ -1,21 +1,129 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Align, Layer, MetricKey, Panel, PresetMeta, Widget } from "../types";
 import { METRICS, isTemperatureMetric, metricMeta } from "../types";
 import { mediaUrl } from "../api";
+import { SendIcon } from "./icons";
 
 interface Props {
   panel: Panel;
+  panelIndex: number;
   layer: Layer | null;
   presets: PresetMeta[];
   uploading: boolean;
+  applying: boolean;
   temperatureUnit: "c" | "f";
+  recentColors: string[];
+  onColorUsed: (color: string) => void;
   onLayer: (patch: Partial<Layer>) => void;
   onPanel: (patch: Partial<Panel>) => void;
   onBackground: (patch: Partial<Panel["background"]>) => void;
   onUpload: (file: File) => void;
   onApplyPanelPreset: (presetId: string) => void;
+  onApplyPanel: () => void;
   onClearLayers: () => void;
+}
+
+function normalizeHex(input: string): string | null {
+  const raw = input.trim().replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/i.test(raw)) {
+    return `#${raw
+      .split("")
+      .map((char) => char + char)
+      .join("")}`.toUpperCase();
+  }
+  if (/^[0-9a-f]{6}$/i.test(raw)) {
+    return `#${raw.toUpperCase()}`;
+  }
+  return null;
+}
+
+function ColorField({
+  label,
+  value,
+  recent,
+  onChange,
+  onRemember,
+}: {
+  label: string;
+  value: string;
+  recent: string[];
+  onChange: (color: string) => void;
+  onRemember: (color: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    setText(value);
+    setInvalid(false);
+  }, [value]);
+
+  const commit = () => {
+    const normalized = normalizeHex(text);
+    if (!normalized) {
+      setInvalid(true);
+      return;
+    }
+    if (normalized !== value) onChange(normalized);
+    onRemember(normalized);
+    setText(normalized);
+    setInvalid(false);
+  };
+
+  const pick = (color: string) => {
+    const normalized = normalizeHex(color) ?? color.toUpperCase();
+    onChange(normalized);
+    onRemember(normalized);
+  };
+
+  return (
+    <div className="field color-field-row">
+      <span className="field-label">{label}</span>
+      <div className="color-control">
+        <input
+          type="color"
+          value={normalizeHex(value) ?? "#000000"}
+          onChange={(event) => pick(event.target.value)}
+        />
+        <input
+          className={`hex-input${invalid ? " is-invalid" : ""}`}
+          value={text}
+          spellCheck={false}
+          aria-label={`${label} hex colour`}
+          aria-invalid={invalid}
+          onChange={(event) => {
+            setText(event.target.value);
+            setInvalid(false);
+          }}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        {recent.length > 0 && (
+          <div className="recent-colors" aria-label="Recent colours">
+            <span className="recent-label">Recent</span>
+            {recent.map((color) => (
+              <button
+                key={color}
+                type="button"
+                className={`color-swatch${color === value ? " is-current" : ""}`}
+                style={{ background: color }}
+                title={color}
+                aria-label={`Use ${color}`}
+                onClick={() => pick(color)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -54,15 +162,20 @@ function NumberInput({
 
 export default function Inspector({
   panel,
+  panelIndex,
   layer,
   presets,
   uploading,
+  applying,
   temperatureUnit,
+  recentColors,
+  onColorUsed,
   onLayer,
   onPanel,
   onBackground,
   onUpload,
   onApplyPanelPreset,
+  onApplyPanel,
   onClearLayers,
 }: Props) {
   const [themeChoice, setThemeChoice] = useState("");
@@ -75,6 +188,24 @@ export default function Inspector({
   return (
     <div className="inspector">
       <section className="field-group">
+        <div className="inspector-heading">
+          <h2 className="section-title">Panel {panelIndex + 1}</h2>
+          <button
+            type="button"
+            className="button-primary button-small"
+            disabled={applying}
+            title={`Send only panel ${panelIndex + 1} to the display`}
+            onClick={onApplyPanel}
+          >
+            <SendIcon />
+            {applying ? "Applying…" : "Apply"}
+          </button>
+        </div>
+        <p className="hint">
+          Changes stay in the editor. <strong>Apply</strong> sends this panel only;{" "}
+          <strong>Send all</strong> sends every panel.
+        </p>
+
         <h2 className="section-title">Panel appearance</h2>
 
         <Field label="Background">
@@ -89,16 +220,13 @@ export default function Inspector({
           </select>
         </Field>
 
-        <Field label="Colour">
-          <span className="color-field">
-            <input
-              type="color"
-              value={background.color}
-              onChange={(event) => onBackground({ color: event.target.value.toUpperCase() })}
-            />
-            <code>{background.color}</code>
-          </span>
-        </Field>
+        <ColorField
+          label="Colour"
+          value={background.color}
+          recent={recentColors}
+          onChange={(color) => onBackground({ color })}
+          onRemember={onColorUsed}
+        />
 
         {background.kind === "image" && (
           <>
@@ -152,16 +280,13 @@ export default function Inspector({
           </>
         )}
 
-        <Field label="Accent">
-          <span className="color-field">
-            <input
-              type="color"
-              value={panel.accent}
-              onChange={(event) => onPanel({ accent: event.target.value.toUpperCase() })}
-            />
-            <code>{panel.accent}</code>
-          </span>
-        </Field>
+        <ColorField
+          label="Accent"
+          value={panel.accent}
+          recent={recentColors}
+          onChange={(accent) => onPanel({ accent })}
+          onRemember={onColorUsed}
+        />
 
         <div className="subgroup">
           <span className="subgroup-title">Theme for this panel only</span>
@@ -180,10 +305,13 @@ export default function Inspector({
               disabled={!themeChoice}
               onClick={() => onApplyPanelPreset(themeChoice)}
             >
-              Apply
+              Use theme
             </button>
           </div>
-          <p className="hint">Replaces this panel's layers and background. Other panels stay as they are.</p>
+          <p className="hint">
+            Replaces this panel in the editor. Press <strong>Apply</strong> above to send it;
+            other panels stay as they are.
+          </p>
         </div>
 
         <button
@@ -315,28 +443,22 @@ export default function Inspector({
             </select>
           </Field>
 
-          <Field label="Colour">
-            <span className="color-field">
-              <input
-                type="color"
-                value={layer.color}
-                onChange={(event) => onLayer({ color: event.target.value.toUpperCase() })}
-              />
-              <code>{layer.color}</code>
-            </span>
-          </Field>
+          <ColorField
+            label="Colour"
+            value={layer.color}
+            recent={recentColors}
+            onChange={(color) => onLayer({ color })}
+            onRemember={onColorUsed}
+          />
 
           {layer.kind === "metric" && layer.widget !== "number" && (
-            <Field label={layer.widget === "line" ? "Graph background" : "Bar track"}>
-              <span className="color-field">
-                <input
-                  type="color"
-                  value={layer.track_color}
-                  onChange={(event) => onLayer({ track_color: event.target.value.toUpperCase() })}
-                />
-                <code>{layer.track_color}</code>
-              </span>
-            </Field>
+            <ColorField
+              label={layer.widget === "line" ? "Graph background" : "Bar track"}
+              value={layer.track_color}
+              recent={recentColors}
+              onChange={(track_color) => onLayer({ track_color })}
+              onRemember={onColorUsed}
+            />
           )}
 
           {(layer.kind === "text" || layer.widget === "number") && (

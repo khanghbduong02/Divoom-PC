@@ -109,12 +109,15 @@ export default function Settings({ open, onClose }: Props) {
                   onChange={(event) => void save({ auto_push: event.target.checked })}
                 />
                 <span>
-                  Send the latest design to the display automatically
-                  <em>Edits appear on the Gate within a few seconds.</em>
+                  Keep readings live on the display
+                  <em>
+                    Sensor values update in the design already applied. Layout and colour changes
+                    wait for <strong>Apply</strong> or <strong>Send all</strong>.
+                  </em>
                 </span>
               </label>
               <div className="inline-row">
-                <label htmlFor="push-interval">Update every</label>
+                <label htmlFor="push-interval">Update readings every</label>
                 <input
                   id="push-interval"
                   type="number"

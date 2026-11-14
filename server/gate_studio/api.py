@@ -50,6 +50,15 @@ class AppState:
     def __init__(self, store: ConfigStore, collector: SensorCollector | None = None) -> None:
         self.store = store
         self.config: AppConfig = store.load()
+        #: what the panels currently show; edits only replace it on Apply/Send
+        self.applied_theme: Theme = (self.config.applied_theme or self.config.theme).model_copy(
+            deep=True
+        )
+        if self.config.applied_theme is None:
+            # Remember the first design as applied, so later drafts stay drafts
+            # even if the app restarts before the user presses Apply/Send all.
+            self.config.applied_theme = self.applied_theme.model_copy(deep=True)
+            self.save()
         self.collector = collector or SensorCollector()
         self.ids = FrameIds()
         self._transport: DeviceTransport | None = None
@@ -217,9 +226,25 @@ def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[
         return results
 
 
+def _apply_draft(state: AppState, panels: list[int] | None) -> None:
+    """Copy the editor draft into the design the display is allowed to show."""
+    if panels is None:
+        state.applied_theme = state.config.theme.model_copy(deep=True)
+        state.last_frames.clear()
+    else:
+        applied = state.applied_theme.model_copy(deep=True)
+        for index in panels:
+            applied.panels[index] = state.config.theme.panels[index].model_copy(deep=True)
+            state.last_frames.pop(index, None)
+        state.applied_theme = applied
+    state.config.applied_theme = state.applied_theme.model_copy(deep=True)
+    state.save()
+
+
 def _push_loop(state: AppState) -> None:
-    """Keep the panels live: re-render and send on an interval, skipping
-    frames whose bytes did not change so an idle panel is not rewritten."""
+    """Keep the applied design live: re-render and send on an interval, skipping
+    frames whose bytes did not change so an idle panel is not rewritten. Draft
+    edits never reach this loop until Apply/Send copies them into applied_theme."""
     last_full = 0.0
     while not state._stop_push.wait(0.3):
         settings = state.config.settings
@@ -232,7 +257,7 @@ def _push_loop(state: AppState) -> None:
         try:
             with state.frame_lock:
                 transport = state.transport()
-                images = _render_theme(state, state.config.theme)
+                images = _render_theme(state, state.applied_theme)
                 if now - last_full > 60:
                     state.last_frames.clear()
                     last_full = now
@@ -523,8 +548,12 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
 
     @app.post("/api/send")
     def send(body: SendRequest | None = None) -> dict[str, object]:
-        images = _render_theme(state, state.config.theme)
         panels = body.panels if body else None
+        if panels is not None:
+            if any(not 0 <= panel <= 4 for panel in panels):
+                raise HTTPException(status_code=422, detail="panels must be 0..4")
+        _apply_draft(state, panels)
+        images = _render_theme(state, state.applied_theme)
         try:
             results = _push(state, panels, images)
         except DeviceError as exc:

@@ -208,7 +208,7 @@ class DeviceConfig(BaseModel):
 
 class AppSettings(BaseModel):
     refresh_interval: float = 1.5
-    #: keep the panels live without pressing Send
+    #: keep sensor readings live in the already-applied design
     auto_push: bool = True
     push_interval: float = 2.0
     allow_lan: bool = False
@@ -234,4 +234,7 @@ class AppConfig(BaseModel):
     schema_version: int = CONFIG_VERSION
     device: DeviceConfig = Field(default_factory=DeviceConfig)
     settings: AppSettings = Field(default_factory=AppSettings)
+    #: the editor draft; changes here wait for Apply/Send all
     theme: Theme = Field(default_factory=lambda: Theme(name="Untitled"))
+    #: the design currently on the display (sensor values keep updating in it)
+    applied_theme: Theme | None = None

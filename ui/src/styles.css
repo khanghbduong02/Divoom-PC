@@ -830,9 +830,72 @@ code {
 }
 
 .field > input,
-.field > select,
-.field > .color-field {
+.field > select {
   width: 132px;
+  flex: none;
+}
+
+.field.color-field-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.color-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hex-input {
+  width: 86px;
+  flex: none;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.hex-input.is-invalid {
+  border-color: var(--err);
+}
+
+.recent-colors {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+  align-items: center;
+}
+
+.recent-label {
+  font-size: 10px;
+  color: var(--ink-soft);
+  margin-right: 2px;
+}
+
+.color-swatch {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.color-swatch.is-current {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inspector-heading .button-small {
   flex: none;
 }
 

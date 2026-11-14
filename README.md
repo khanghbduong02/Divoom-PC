@@ -18,14 +18,19 @@ You need one file: **`GateThemeStudio.exe`** (ask whoever built it for you, or b
 yourself with the steps below).
 
 1. **Put it anywhere** you like — Desktop, Documents, a folder on `D:`. There is no
-   installer and nothing else to download.
+   installer and nothing else to download; the sensor helper is inside the exe.
 2. **Double-click it.** Windows may show a blue *"Windows protected your PC"* box
    because the file is not code-signed: click **More info → Run anyway**. If Windows
    instead says the app can't run and nothing offers *Run anyway*, Smart App Control is
    blocking unsigned software — see [Smart App Control](#smart-app-control) below.
-3. The editor opens in your browser and a small icon appears in the notification area
+3. On the first run a small window offers to install the CPU temperature helper. Choose
+   **Yes** and approve the one Windows administrator prompt. It installs the signed
+   PawnIO sensor driver, turns on LibreHardwareMonitor's local sensor server, and starts
+   it at every login. You can decline and use **Troubleshooting → Enable CPU temperature**
+   later; everything except CPU temperature works either way.
+4. The editor opens in your browser and a small icon appears in the notification area
    (bottom-right of the taskbar, possibly behind the `^` arrow).
-4. **Connect the display** once:
+5. **Connect the display** once:
    - Put the Times Gate on the same Wi-Fi as the PC and leave it powered on.
    - **Close the Divoom phone app** while you set this up — the display only accepts one
      connection and the phone app holds it.
@@ -33,10 +38,10 @@ yourself with the steps below).
      that shows up. If it is not found, type the IP the Divoom app shows and press
      **Probe**.
    - That is permanent — the app reconnects by itself from then on.
-5. **Design.** Pick a panel, choose a reading from the metric list and press
+6. **Design.** Pick a panel, choose a reading from the metric list and press
    **Add metric**, or **Add text** for a label. Drag things on the panel to move them,
    drag a corner to resize. Drag the dots next to a panel to reorder panels.
-6. **Nothing to save or send.** Edits are saved as you type and sent to the display
+7. **Nothing to save or send.** Edits are saved as you type and sent to the display
    within a couple of seconds. The **Send** button is only for an instant refresh.
 
 The app **starts with Windows** and keeps the display live. Closing the browser tab does
@@ -54,7 +59,10 @@ it like a password. Only do this on a network you trust.
 Settings). Back up that folder to keep your themes; delete it to start clean.
 
 **Uninstalling:** Quit from the tray, untick *Start with Windows*, delete the exe and the
-data folder above. Nothing else is written to the system.
+data folder above. If you enabled CPU temperature, also delete
+`%LOCALAPPDATA%\GateThemeStudio` and the `LibreHardwareMonitor` task (Task Scheduler →
+Task Scheduler Library). The PawnIO driver can be removed from Apps & features if nothing
+else uses it.
 
 ### Smart App Control
 
@@ -156,12 +164,17 @@ cd server
 python build_exe.py
 ```
 
-Output: `server/dist/GateThemeStudio.exe` (one file, ~27 MB, no Python needed on the
-target PC). It contains the UI, previews and presets; user data stays in `%APPDATA%`.
+Output: `server/dist/GateThemeStudio.exe` (one file, ~34 MB, no Python needed on the
+target PC). It contains the UI, previews, presets, LibreHardwareMonitor and the sensor
+setup script, so the one-time CPU permission prompt works on a clean PC; user data stays
+in `%APPDATA%`. Building requires the helper at `tools/LibreHardwareMonitor` (the build
+stops with a download hint if it is missing).
 
 The packaged build registers itself in `HKCU\...\CurrentVersion\Run` as
 `"…\GateThemeStudio.exe" --silent` while *Start with Windows* is on (it is on by
-default). A source checkout never edits the registry unless you flip the switch.
+default). A source checkout never edits the registry unless you flip the switch. The
+sensor helper is different: it is a separate `LibreHardwareMonitor` task that Windows
+starts elevated at login, so the app itself never needs to run as administrator.
 
 Smoke-test the build without touching the registry or the tray:
 

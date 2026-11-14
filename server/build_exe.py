@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parent
 PACKAGE = ROOT / "gate_studio"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
+TOOLS = ROOT.parent / "tools"
+SENSOR_HELPER = TOOLS / "LibreHardwareMonitor"
+SENSOR_SETUP = TOOLS / "setup-sensors.ps1"
 
 
 def make_icon(path: Path) -> Path | None:
@@ -40,6 +43,13 @@ def main() -> int:
     if not (PACKAGE / "static" / "index.html").exists():
         print("The editor bundle is missing. Run `npm install && npm run build` in ui/ first.")
         return 1
+    if not (SENSOR_HELPER / "LibreHardwareMonitor.exe").exists() or not SENSOR_SETUP.exists():
+        print(
+            "The CPU sensor helper is missing. Put LibreHardwareMonitor 0.9.6 in "
+            f"{SENSOR_HELPER} (download it from the LHM GitHub releases) and keep "
+            f"{SENSOR_SETUP.name} there."
+        )
+        return 1
 
     icon = make_icon(BUILD / "app.ico")
     separator = ";" if os.name == "nt" else ":"
@@ -58,6 +68,10 @@ def main() -> int:
         f"{PACKAGE / 'presets'}{separator}gate_studio/presets",
         "--add-data",
         f"{PACKAGE / 'static'}{separator}gate_studio/static",
+        "--add-data",
+        f"{SENSOR_HELPER}{separator}tools/LibreHardwareMonitor",
+        "--add-data",
+        f"{SENSOR_SETUP}{separator}tools",
         "--hidden-import",
         "uvicorn.logging",
         "--hidden-import",

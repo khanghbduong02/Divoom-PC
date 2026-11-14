@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import logging
+import os
 import socket
 import sys
 import threading
@@ -17,7 +19,7 @@ from urllib.parse import quote
 import uvicorn
 
 from . import desktop
-from .api import create_app
+from .api import SENSOR_SETUP_SCRIPT, create_app
 from .config import ConfigStore
 from .device import discover_cloud
 from .device.errors import DeviceError
@@ -35,6 +37,53 @@ def lan_address() -> str | None:
         return None
     finally:
         sock.close()
+
+
+def offer_sensor_setup(store: ConfigStore) -> None:
+    """Ask once, on the first packaged run, to install the CPU sensor helper.
+
+    The helper needs one administrator approval. Keeping the prompt here means the
+    downloaded exe asks for it itself, while normal logins stay non-elevated (no UAC
+    on every boot). Declining leaves the Troubleshooting button available.
+    """
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    if not SENSOR_SETUP_SCRIPT.exists():
+        return
+    marker = store.data_dir / "sensor-setup-offered"
+    if marker.exists():
+        return
+    installed = (
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "GateThemeStudio"
+        / "LibreHardwareMonitor"
+        / "LibreHardwareMonitor.exe"
+    )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if installed.exists():
+        try:
+            marker.write_text("installed\n", encoding="utf-8")
+        except OSError:
+            pass
+        return
+    message = (
+        "Gate Theme Studio can show CPU temperature after installing a small\n"
+        "sensor helper (LibreHardwareMonitor) and its signed PawnIO driver.\n\n"
+        "Windows will ask for administrator permission once. After that the helper\n"
+        "starts automatically with Windows, and this app keeps running normally.\n\n"
+        "Install it now?"
+    )
+    answer = ctypes.windll.user32.MessageBoxW(
+        None, message, "Gate Theme Studio", 0x4 | 0x20  # MB_YESNO | MB_ICONQUESTION
+    )
+    try:
+        marker.write_text("yes\n" if answer == 6 else "declined\n", encoding="utf-8")
+    except OSError:
+        pass
+    if answer != 6:  # IDYES
+        return
+    params = f'-NoProfile -ExecutionPolicy Bypass -File "{SENSOR_SETUP_SCRIPT}"'
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", "powershell.exe", params, None, 1)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -202,6 +251,9 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"  found  : {device.get('name') or 'Times Gate'} at {device.get('ip')}")
 
         threading.Thread(target=_announce, name="startup-discovery", daemon=True).start()
+
+    if not (args.silent or args.no_browser or args.no_tray):
+        offer_sensor_setup(store)
 
     if not (args.no_browser or args.silent):
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()

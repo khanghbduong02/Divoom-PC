@@ -31,8 +31,17 @@ from .render.renderer import render_test_panel
 from .sensors import SensorCollector
 
 STATIC_DIR = Path(__file__).parent / "static"
-#: optional Windows sensor helper shipped next to the source checkout
-SENSOR_SETUP_SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "setup-sensors.ps1"
+
+
+def _resource_root() -> Path:
+    """Project root in a source checkout, bundle root inside the one-file exe."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parents[2]
+
+
+#: Windows sensor helper bundled with the exe or kept in tools/ in a checkout
+SENSOR_SETUP_SCRIPT = _resource_root() / "tools" / "setup-sensors.ps1"
 
 
 class AppState:

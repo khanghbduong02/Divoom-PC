@@ -176,11 +176,6 @@ export default function Diagnostics({ open, onClose }: Props) {
                 {enableMessage && <p className="hint">{enableMessage}</p>}
               </>
             )}
-            {report.hardware.cpu_temp_source && (
-              <p className="hint" style={{ marginTop: 8 }}>
-                CPU temperature comes from {report.hardware.cpu_temp_source}.
-              </p>
-            )}
           </section>
 
           <section>

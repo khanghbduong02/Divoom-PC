@@ -131,9 +131,10 @@ export default function Help({ open, onClose }: Props) {
             </p>
             <p>
               CPU temperature stays at <code>--</code>? Windows does not let normal apps read it.
-              Install <strong>LibreHardwareMonitor</strong>, run it as administrator once and leave it
-              running; the reading appears by itself within half a minute. GPU temperatures do not
-              need it.
+              Open <em>Troubleshooting</em> and press <strong>Enable CPU temperature</strong>, then
+              approve the one Windows prompt. It installs the signed sensor driver, switches on
+              LibreHardwareMonitor's local server, and starts it at every login; the reading appears
+              within half a minute. GPU temperatures do not need it.
             </p>
             {system && (
               <p className="hint">

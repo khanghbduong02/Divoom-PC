@@ -1,9 +1,9 @@
 """Best-effort CPU/GPU readings that need more than psutil.
 
 * NVIDIA GPUs: NVML (no elevation needed).
-* CPU/AMD/Intel temperatures and loads: the WMI namespace exposed by
-  LibreHardwareMonitor (or the older OpenHardwareMonitor). Windows itself has no
-  unprivileged CPU-temperature API, so one of those helpers has to be running.
+* CPU/AMD/Intel temperatures and loads: LibreHardwareMonitor's local web server
+  (0.9.5+) or, for older installs, the WMI namespace it used to expose. Windows
+  itself has no unprivileged CPU-temperature API, so a helper has to be running.
 
 Every source is optional. When one is missing the value stays ``None`` so the
 panel shows ``--`` instead of a wrong number, and nothing here ever raises into
@@ -12,22 +12,95 @@ the sampling loop.
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 import time
+import urllib.request
 
 RETRY_SECONDS = 30.0
 LHM_REFRESH_SECONDS = 2.0
+LHM_DATA_URL = "http://127.0.0.1:8085/data.json"
+LHM_HTTP_TIMEOUT = 1.5
 
 SENSOR_NAMESPACES: tuple[tuple[str, str], ...] = (
-    ("root/LibreHardwareMonitor", "LibreHardwareMonitor"),
-    ("root/OpenHardwareMonitor", "OpenHardwareMonitor"),
+    ("root/LibreHardwareMonitor", "LibreHardwareMonitor (WMI)"),
+    ("root/OpenHardwareMonitor", "OpenHardwareMonitor (WMI)"),
 )
 
 CPU_TEMP_HINT = (
-    "Windows has no unprivileged CPU-temperature API. Install LibreHardwareMonitor "
-    "(or OpenHardwareMonitor), run it as administrator and leave it running; this "
-    "reading appears within 30 seconds. GPU temperatures work without it."
+    "Windows has no unprivileged CPU-temperature API. The app can install "
+    "LibreHardwareMonitor and switch on its local sensor server (Troubleshooting → "
+    "Enable CPU temperature); the reading appears within 30 seconds. GPU "
+    "temperatures work without it."
 )
+
+NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
+
+
+def _number(raw: object) -> float | None:
+    """Pull the numeric part out of LHM's values, e.g. ``"65.0 °C"``."""
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    match = NUMBER.search(str(raw or ""))
+    if not match:
+        return None
+    try:
+        return float(match.group(0).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def parse_lhm_payload(payload: object) -> dict[str, float | None]:
+    """Read CPU/GPU values out of LibreHardwareMonitor's ``data.json`` tree."""
+    cpu_package = cpu_tctl = cpu_max = cpu_average = cpu_any = None
+    gpu_temp = gpu_load = fan = None
+
+    stack = [payload]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            continue
+        stack.extend(node.get("Children") or [])
+        identifier = str(node.get("SensorId") or "").lower()
+        kind = str(node.get("Type") or "").lower()
+        name = str(node.get("Text") or "").strip().lower()
+        if not identifier or not kind:
+            continue
+        value = _number(node.get("Value"))
+        if value is None:
+            continue
+        is_cpu = identifier.startswith(("/intelcpu", "/amdcpu", "/cpu"))
+        is_gpu = identifier.startswith(("/gpu", "/gpu-nvidia", "/gpu-amd", "/gpu-intel"))
+        if kind == "temperature" and is_cpu:
+            if "package" in name and cpu_package is None:
+                cpu_package = value
+            elif "tctl" in name and cpu_tctl is None:
+                cpu_tctl = value
+            elif "core max" in name and cpu_max is None:
+                cpu_max = value
+            elif "core average" in name and cpu_average is None:
+                cpu_average = value
+            elif "distance" not in name and cpu_any is None:
+                cpu_any = value
+        elif kind == "temperature" and is_gpu:
+            if ("core" in name or "gpu" in name) and gpu_temp is None:
+                gpu_temp = value
+        elif kind == "load" and is_gpu and "core" in name:
+            gpu_load = value
+        elif kind == "fan" and is_gpu and fan is None:
+            fan = value
+
+    cpu_temp = cpu_package
+    for candidate in (cpu_tctl, cpu_max, cpu_average, cpu_any):
+        if cpu_temp is None:
+            cpu_temp = candidate
+    return {
+        "cpu_temp": cpu_temp,
+        "gpu_temp": gpu_temp,
+        "gpu_percent": gpu_load,
+        "fan_percent": fan,
+    }
 
 
 class HardwareReader:
@@ -36,6 +109,7 @@ class HardwareReader:
         self._nvml_failed_at: float | None = None
         self._lhm_conn: object | None = None
         self._lhm_failed_at: float | None = None
+        self._lhm_http_failed_at: float | None = None
         self._lhm_last_read = 0.0
         self._lhm_values: dict[str, float | None] = {}
         self._sensor_source: str | None = None
@@ -89,7 +163,25 @@ class HardwareReader:
         return values
 
     # -- LibreHardwareMonitor -----------------------------------------
-    def _lhm(self) -> object | None:
+    def _lhm_http(self) -> dict[str, float | None] | None:
+        """LibreHardwareMonitor 0.9.5+ publishes sensors only over HTTP."""
+        if sys.platform != "win32":
+            return None
+        if self._lhm_http_failed_at and time.time() - self._lhm_http_failed_at < RETRY_SECONDS:
+            return None
+        try:
+            with urllib.request.urlopen(LHM_DATA_URL, timeout=LHM_HTTP_TIMEOUT) as response:
+                if response.status != 200:
+                    raise OSError(f"HTTP {response.status}")
+                payload = json.load(response)
+        except Exception:  # noqa: BLE001 - server off, wrong version or port
+            self._lhm_http_failed_at = time.time()
+            return None
+        self._lhm_http_failed_at = None
+        self._sensor_source = "LibreHardwareMonitor (web)"
+        return parse_lhm_payload(payload)
+
+    def _lhm_wmi(self) -> object | None:
         if sys.platform != "win32":
             return None
         if self._lhm_conn is not None:
@@ -114,14 +206,9 @@ class HardwareReader:
         self._lhm_failed_at = time.time()
         return None
 
-    def libre_hardware_monitor(self) -> dict[str, float | None]:
-        if time.time() - self._lhm_last_read < LHM_REFRESH_SECONDS:
-            return dict(self._lhm_values)
-        conn = self._lhm()
-        if conn is None:
-            return {}
+    def _lhm_from_wmi(self, conn: object) -> dict[str, float | None]:
         try:
-            sensors = conn.Sensor()
+            sensors = conn.Sensor()  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001 - the helper may have been closed
             self._lhm_conn = None
             self._lhm_failed_at = time.time()
@@ -158,13 +245,25 @@ class HardwareReader:
             elif kind == "fan" and is_gpu and fan is None:
                 fan = value  # RPM on most boards; only used when NVML has no percentage
 
-        values = {
+        return {
             "cpu_temp": cpu_package if cpu_package is not None else cpu_temp,
             "gpu_temp": gpu_temp,
             "gpu_percent": gpu_load,
             "fan_percent": fan,
         }
-        if values["cpu_temp"] is not None:
+
+    def libre_hardware_monitor(self) -> dict[str, float | None]:
+        if time.time() - self._lhm_last_read < LHM_REFRESH_SECONDS:
+            return dict(self._lhm_values)
+
+        values = self._lhm_http()
+        if values is None:
+            conn = self._lhm_wmi()
+            values = self._lhm_from_wmi(conn) if conn is not None else {}
+        if not values:
+            return {}
+
+        if values.get("cpu_temp") is not None:
             self._cpu_temp_source = self._sensor_source
         self._lhm_values = values
         self._lhm_last_read = time.time()

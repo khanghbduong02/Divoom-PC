@@ -213,15 +213,21 @@ its cache once a minute so a display that was power-cycled still gets a fresh fr
 | --- | --- |
 | CPU %, RAM %, disk %, network up/down | psutil |
 | GPU % / temp / VRAM / fan | NVML (`nvidia-ml-py`), NVIDIA only |
-| CPU temp, AMD/Intel GPU temp | LibreHardwareMonitor's WMI namespace, if it is running |
+| CPU temp, AMD/Intel GPU temp | LibreHardwareMonitor's local web server, if it is running |
 
 Metrics the machine cannot supply render as `--`, never as a wrong number. Windows has
 no unprivileged CPU-temperature API, so CPU temperature needs **LibreHardwareMonitor**
-(or OpenHardwareMonitor) running as administrator: the agent reads its
-`root/LibreHardwareMonitor` WMI namespace and picks the reading up within 30 seconds.
-Without it everything else keeps working, and Troubleshooting explains the missing
-reading with a download link. GPU temperatures come from NVML and need no helper.
-Nothing asks for elevation.
+running as administrator with its local web server on (Options → Remote Web Server →
+Run). The agent reads `http://127.0.0.1:8085/data.json` every two seconds. LibreHardwareMonitor
+0.9.5+ also needs its signed **PawnIO** driver; older releases still expose WMI and are
+read that way.
+
+Troubleshooting → **Enable CPU temperature** does that setup once: it installs PawnIO
+(through winget), turns the web server on, and registers LibreHardwareMonitor as an
+elevated logon task, so it starts hidden at every login. Windows shows one administrator
+prompt the first time. Without it everything else keeps working, and Troubleshooting
+explains the missing reading with a download link. GPU temperatures come from NVML and
+need no helper.
 
 Temperatures are stored in Celsius and drawn in the unit chosen in Settings. A line
 graph follows one metric over the selected window (5 min–3 h), keeps gaps where a
@@ -299,9 +305,10 @@ The three failure modes are reported separately, because each has a different fi
 | `timeout` | No reply | Wrong IP, other network, device asleep, or it never got internet after boot |
 | `token` | Device answered, rejected the call | Add/correct the LocalToken |
 
-A CPU temperature stuck at `--` is not a display problem: install LibreHardwareMonitor,
-run it as administrator and leave it running. Troubleshooting shows whether a sensor
-source was found.
+A CPU temperature stuck at `--` is not a display problem: open Troubleshooting and press
+**Enable CPU temperature**, then approve the single Windows prompt. It installs
+LibreHardwareMonitor's PawnIO driver, enables its local sensor server and starts it at
+every login. Troubleshooting shows whether a sensor source was found.
 
 Whatever the device replied is shown verbatim in the wizard and in **Troubleshooting**.
 

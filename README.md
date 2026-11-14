@@ -44,10 +44,13 @@ yourself with the steps below).
    be picked, typed as a `#RRGGBB` value, or chosen from the recent-colour swatches.
 7. **Apply when you like it.** Edits are saved in the editor but do not touch the Gate
    until you press **Apply** in the right panel (that screen only) or **Send all** in the
-   top bar (all five). The design already on the Gate keeps its sensor readings live.
-   Use **Save theme** in the top bar to keep all five panels, or **Save panel** in the
-   inspector to keep one screen, then load either from its saved list later. Loading a
-   saved design only changes the editor; press **Apply** or **Send all** to send it.
+   top bar (every edited panel). Panels with no layers and the default background are
+   left untouched, so they cannot blank screens you have not designed yet. To clear one
+   screen, select it and press **Apply** while it is empty. The design already on the Gate
+   keeps its sensor readings live. Use **Save theme** in the top bar to keep all five
+   panels, or **Save panel** in the inspector to keep one screen, then load either from
+   its saved list later. Loading a saved design only changes the editor; press **Apply**
+   or **Send all** to send it.
 
 The app **starts with Windows** and keeps the display live. Closing the browser tab does
 not stop it. To stop it for good, right-click the tray icon and choose **Quit Gate Theme
@@ -218,8 +221,8 @@ fresh machine shows a SmartScreen prompt.
   metric, widget (big number or bar), position, size, colour, text sizing, decimals,
   unit, gauge min/max, alignment.
 - **Toolbar** — choose a built-in or saved theme and press **Apply**; **Save theme** keeps
-  the current five-panel draft for reuse; **Send all** forces an immediate
-  update of all five panels; **Help** has the end-user guide; **Settings** controls
+  the current five-panel draft for reuse; **Send all** forces an immediate update of the
+  edited panels and skips empty ones; **Help** has the end-user guide; **Settings** controls
   updates, Divoom-app hand-off, autostart, network access and whether temperatures read
   **°C or °F** (all panels); **Troubleshooting** shows the last device reply verbatim.
 

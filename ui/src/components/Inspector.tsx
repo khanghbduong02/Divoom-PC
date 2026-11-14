@@ -235,7 +235,8 @@ export default function Inspector({
         </div>
         <p className="hint">
           Changes stay in the editor. <strong>Apply</strong> sends this panel only;{" "}
-          <strong>Send all</strong> sends every panel. Applying a paused screen takes it back.
+          <strong>Send all</strong> sends edited panels and leaves empty panels alone.
+          Applying a paused screen takes it back.
         </p>
 
         {pausedPanel ? (

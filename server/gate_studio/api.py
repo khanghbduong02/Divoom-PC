@@ -36,7 +36,7 @@ from .device import (
     probe_host,
 )
 from .library import SavedLibrary
-from .models import AppConfig, AppSettings, DeviceConfig, PausedPanel, Theme
+from .models import AppConfig, AppSettings, Background, DeviceConfig, Panel, PausedPanel, Theme
 from .presets import list_presets, load_preset
 from .render import encode_jpeg, encode_png, render_all
 from .render.renderer import render_test_panel
@@ -357,6 +357,20 @@ def _error_response(exc: DeviceError, status: int = 502) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": exc.as_dict()})
 
 
+def _is_empty_panel(panel: Panel) -> bool:
+    """A panel nobody has given layers or a background to yet.
+
+    Its accent does not draw anything on its own, so changing only the accent
+    still leaves the screen empty. A custom background is visible and counts
+    as content, even when there are no layers on top of it.
+    """
+    return not panel.layers and panel.background == Background()
+
+
+def _edited_panels(theme: Theme) -> list[int]:
+    return [index for index, panel in enumerate(theme.panels) if not _is_empty_panel(panel)]
+
+
 def _render_theme(state: AppState, theme: Theme) -> list:
     """Render every panel, giving line layers only the history they ask for."""
     windows: dict[str, int] = {}
@@ -439,8 +453,13 @@ def _push_loop(state: AppState) -> None:
                     state.last_frames.clear()
                     last_full = now
                 paused = state.paused_indices()
+                empty = {
+                    index
+                    for index, panel in enumerate(state.applied_theme.panels)
+                    if _is_empty_panel(panel)
+                }
                 for index, image in enumerate(images):
-                    if index in paused:
+                    if index in paused or index in empty:
                         continue
                     payload = encode_jpeg(image)
                     if state.last_frames.get(index) == payload:
@@ -854,13 +873,25 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
 
     @app.post("/api/send")
     def send(body: SendRequest | None = None) -> dict[str, object]:
-        panels = body.panels if body else None
-        if panels is not None:
-            if any(not 0 <= panel <= 4 for panel in panels):
+        requested = body.panels if body else None
+        if requested is not None:
+            if any(not 0 <= panel <= 4 for panel in requested):
                 raise HTTPException(status_code=422, detail="panels must be 0..4")
+            panels = requested
+            skipped: list[int] = []
+        else:
+            panels = _edited_panels(state.config.theme)
+            targets = set(panels)
+            skipped = [index for index in range(5) if index not in targets]
+
+        # Send all is a no-op when every panel is still empty. It must not
+        # blank screens that the user has not designed yet.
+        if not panels:
+            return {"results": [], "skipped": skipped}
+
         _apply_draft(state, panels)
         # An explicit Apply or Send all is the user taking the screens back.
-        state.resume_panels(list(range(5)) if panels is None else panels)
+        state.resume_panels(panels)
         images = _render_theme(state, state.applied_theme)
         try:
             results = _push(state, panels, images)
@@ -868,7 +899,7 @@ def create_app(store: ConfigStore | None = None, static_dir: Path | None = None)
             state.last_error = exc.as_dict()
             return _error_response(exc)
         state.last_error = None
-        return {"results": results}
+        return {"results": results, "skipped": skipped}
 
     @app.get("/api/diagnostics")
     def diagnostics() -> dict[str, object]:

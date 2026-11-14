@@ -500,11 +500,32 @@ export default function App() {
     setNotice(null);
     try {
       const reply = await api.send();
+      const skipped = reply.skipped ?? [];
+      const sentPanels = new Set(reply.results.map((result) => result.panel));
+      setPausedPanels((current) => current.filter((item) => !sentPanels.has(item.panel)));
+
+      if (reply.results.length === 0) {
+        setNotice({
+          tone: "info",
+          text:
+            skipped.length > 0
+              ? `Nothing sent. ${skipped.length} empty panel${skipped.length === 1 ? " was" : "s were"} left unchanged.`
+              : "Nothing to send.",
+        });
+        return;
+      }
+
       const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
-      setPausedPanels([]);
+      const sentLabel = `${reply.results.length} edited panel${
+        reply.results.length === 1 ? "" : "s"
+      }`;
       setNotice({
         tone: "ok",
-        text: `Sent to ${reply.results.length} panel(s), ${bytes} bytes in total.`,
+        text: `Sent to ${sentLabel}, ${bytes} bytes in total.${
+          skipped.length > 0
+            ? ` ${skipped.length} empty panel${skipped.length === 1 ? " was" : "s were"} left unchanged.`
+            : ""
+        }`,
       });
     } catch (error) {
       setNotice(noticeFrom(error));
@@ -623,7 +644,8 @@ export default function App() {
             <section className="empty-state">
               <h2>Panel {selectedPanel + 1} is empty</h2>
               <p className="hint">
-                Add a sensor reading, or apply a ready-made theme to all five panels.
+                Add a sensor reading, or apply a ready-made theme to all five panels. A panel
+                with no layers and the default black background is skipped by <strong>Send all</strong>.
               </p>
               <div className="empty-actions">
                 <button

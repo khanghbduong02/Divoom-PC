@@ -82,6 +82,11 @@ def test_presets_list_and_apply(client: TestClient) -> None:
 
 
 def test_send_without_device_explains_the_problem(client: TestClient) -> None:
+    # Send all skips untouched empty panels, so give panel 1 something to send.
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["background"]["color"] = "#112233"
+    assert client.put("/api/theme", json=theme).status_code == 200
+
     response = client.post("/api/send")
     assert response.status_code == 502
     error = response.json()["error"]
@@ -118,18 +123,72 @@ def test_send_applies_only_the_requested_panel(client: TestClient, monkeypatch) 
     assert state.applied_theme.panels[1].background.color == "#BBBBBB"
 
 
-def test_send_all_applies_every_panel(client: TestClient, monkeypatch) -> None:
+def test_send_all_applies_edited_panels(client: TestClient, monkeypatch) -> None:
     theme = client.get("/api/theme").json()["theme"]
     theme["panels"][2]["background"]["color"] = "#CCCCCC"
     assert client.put("/api/theme", json=theme).status_code == 200
 
     monkeypatch.setattr("gate_studio.api._push", lambda *args, **kwargs: [])
-    assert client.post("/api/send").status_code == 200
+    response = client.post("/api/send")
+    assert response.status_code == 200
+    assert response.json()["skipped"] == [0, 1, 3, 4]
 
     state = client.app.state.gate
     assert state.applied_theme.panels[2].background.color == "#CCCCCC"
     assert state.config.applied_theme is not None
     assert state.config.applied_theme.panels[2].background.color == "#CCCCCC"
+
+
+def test_send_all_skips_empty_panels(client: TestClient, monkeypatch) -> None:
+    pushed: list[list[int]] = []
+
+    def fake_push(state, panels, images):  # noqa: ANN001 - test double
+        pushed.append(list(panels))
+        return []
+
+    monkeypatch.setattr("gate_studio.api._push", fake_push)
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][1]["layers"].append(
+        {
+            "kind": "text",
+            "source": "static",
+            "text": "Edited",
+            "x": 4,
+            "y": 4,
+            "w": 80,
+            "h": 20,
+        }
+    )
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    response = client.post("/api/send")
+    assert response.status_code == 200
+    assert pushed == [[1]]
+    assert response.json()["skipped"] == [0, 2, 3, 4]
+
+
+def test_send_all_with_only_empty_panels_does_nothing(client: TestClient, monkeypatch) -> None:
+    pushed: list[list[int]] = []
+    monkeypatch.setattr(
+        "gate_studio.api._push",
+        lambda state, panels, images: pushed.append(list(panels)) or [],
+    )
+
+    response = client.post("/api/send")
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "skipped": [0, 1, 2, 3, 4]}
+    assert pushed == []
+
+
+def test_apply_empty_panel_still_clears_that_panel(client: TestClient, monkeypatch) -> None:
+    pushed: list[list[int]] = []
+    monkeypatch.setattr(
+        "gate_studio.api._push",
+        lambda state, panels, images: pushed.append(list(panels)) or [],
+    )
+
+    assert client.post("/api/send", json={"panels": [0]}).status_code == 200
+    assert pushed == [[0]]
 
 
 def test_paused_panel_round_trip_and_preview_state(client: TestClient, store: ConfigStore) -> None:

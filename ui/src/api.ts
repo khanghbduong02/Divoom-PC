@@ -155,7 +155,7 @@ export const api = {
       body: JSON.stringify({ panel }),
     }),
   send: (panels?: number[]) =>
-    request<{ results: SendResult[] }>("/api/send", {
+    request<{ results: SendResult[]; skipped?: number[] }>("/api/send", {
       method: "POST",
       body: JSON.stringify({ panels: panels ?? null }),
     }),

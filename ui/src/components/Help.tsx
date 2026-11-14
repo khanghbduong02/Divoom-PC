@@ -96,10 +96,12 @@ export default function Help({ open, onClose }: Props) {
             <p className="hint">
               Edits are saved as you type but stay in the editor until you send them: use{" "}
               <strong>Apply</strong> in the right panel to update only the selected screen, or{" "}
-              <strong>Send all</strong> in the top bar for all five. The design already on the Gate
-              keeps its sensor readings live. Every reading can be a big value, a progress bar, or a
-              line graph of the last 5 minutes to 3 hours, and temperatures can be shown in Celsius
-              or Fahrenheit from Settings.
+              <strong>Send all</strong> in the top bar for all edited panels. Panels you have not
+              given layers or a background to are left as they are, so an empty default panel
+              cannot blank a screen you already set up. The design already on the Gate keeps its
+              sensor readings live. Every reading can be a big value, a progress bar, or a line
+              graph of the last 5 minutes to 3 hours, and temperatures can be shown in Celsius or
+              Fahrenheit from Settings.
             </p>
             <p className="hint">
               If you change a screen from the Divoom app, Gate Theme Studio notices within a few

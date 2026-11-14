@@ -126,7 +126,7 @@ export default function Toolbar({
         className="button-primary"
         onClick={onSend}
         disabled={sending}
-        title="Apply the current design to all five panels"
+        title="Apply edited panels; empty panels stay as they are"
       >
         <SendIcon />
         {sending ? "Sending…" : "Send all"}

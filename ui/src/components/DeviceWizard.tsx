@@ -281,7 +281,7 @@ export default function DeviceWizard({ open, device, onClose, onChanged }: Props
             {results && (
               <p className="hint">
                 Accepted by {results.length} panel(s) ·{" "}
-                {results.reduce((sum, item) => sum + item.bytes, 0)} bytes sent
+                {results.reduce((sum, item) => sum + (item.bytes ?? 0), 0)} bytes sent
               </p>
             )}
           </section>

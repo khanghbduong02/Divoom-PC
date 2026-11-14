@@ -38,6 +38,19 @@ export function metricMeta(key: MetricKey): MetricMeta {
   return METRICS.find((metric) => metric.key === key) ?? METRICS[0];
 }
 
+export function formatMetricValue(value: number | null | undefined, metric: MetricMeta): string {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return "—";
+  }
+  const unit =
+    metric.unit === "%" || metric.unit === "°C" || metric.unit === "°F"
+      ? metric.unit
+      : metric.unit
+        ? ` ${metric.unit}`
+        : "";
+  return `${Number(value).toFixed(metric.decimals)}${unit}`;
+}
+
 export type Align = "left" | "center" | "right";
 export type Widget = "number" | "bar" | "line";
 
@@ -171,9 +184,17 @@ export interface ProbeOutcome {
 export interface SendResult {
   panel: number;
   ok: boolean;
-  pic_id: number;
-  bytes: number;
-  reply: Record<string, unknown>;
+  pic_id?: number;
+  bytes?: number;
+  reply?: Record<string, unknown>;
+}
+
+export function totalSentBytes(results: SendResult[]): number {
+  return results.reduce(
+    (total, result) =>
+      total + (typeof result.bytes === "number" && Number.isFinite(result.bytes) ? result.bytes : 0),
+    0,
+  );
 }
 
 export interface SensorValues {

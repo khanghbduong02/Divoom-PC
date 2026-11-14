@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { METRICS } from "../types";
+import { METRICS, formatMetricValue } from "../types";
 import type { DeviceSummary, SensorValues, SendResult } from "../types";
 
 function metricLabel(key: string): string {
   return METRICS.find((metric) => metric.key === key)?.label ?? key;
+}
+
+function metricValue(key: string, value: number | null): string {
+  if (value === null) return "Not available";
+  const metric = METRICS.find((item) => item.key === key);
+  return metric ? formatMetricValue(value, metric) : String(value);
 }
 
 interface Props {
@@ -146,7 +152,7 @@ export default function Diagnostics({ open, onClose }: Props) {
               {Object.entries(report.sensors).map(([key, value]) => (
                 <div key={key} className="fact-row">
                   <dt>{metricLabel(key)}</dt>
-                  <dd>{value === null ? "Not available" : String(value)}</dd>
+                  <dd>{metricValue(key, value)}</dd>
                 </div>
               ))}
             </dl>

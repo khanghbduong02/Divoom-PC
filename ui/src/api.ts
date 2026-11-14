@@ -154,10 +154,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ panel }),
     }),
-  send: (panels?: number[]) =>
+  send: (panels?: number[], theme?: Theme) =>
     request<{ results: SendResult[]; skipped?: number[] }>("/api/send", {
       method: "POST",
-      body: JSON.stringify({ panels: panels ?? null }),
+      body: JSON.stringify({ panels: panels ?? null, theme: theme ?? null }),
     }),
   setPanelPaused: (
     panel: number,

@@ -12,7 +12,7 @@ import type {
   Theme,
   WireStatus,
 } from "./types";
-import { METRICS, PANEL_SIZE, metricMeta } from "./types";
+import { METRICS, PANEL_SIZE, formatMetricValue, metricMeta, totalSentBytes } from "./types";
 import Toolbar from "./components/Toolbar";
 import PanelRail from "./components/PanelRail";
 import Stage from "./components/Stage";
@@ -475,12 +475,12 @@ export default function App() {
     setApplyingPanel(true);
     setNotice(null);
     try {
-      const reply = await api.send([selectedPanel]);
-      const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
+      const reply = await api.send([selectedPanel], theme ?? undefined);
+      const bytes = totalSentBytes(reply.results);
       setPausedPanels((current) => current.filter((item) => item.panel !== selectedPanel));
       setNotice({
         tone: "ok",
-        text: `Applied panel ${selectedPanel + 1} to the display, ${bytes} bytes.`,
+        text: `Applied panel ${selectedPanel + 1} to the display${bytes > 0 ? `, ${bytes.toLocaleString()} bytes` : ""}.`,
       });
     } catch (error) {
       setNotice(noticeFrom(error));
@@ -499,7 +499,7 @@ export default function App() {
     setSending(true);
     setNotice(null);
     try {
-      const reply = await api.send();
+      const reply = await api.send(undefined, theme ?? undefined);
       const skipped = reply.skipped ?? [];
       const sentPanels = new Set(reply.results.map((result) => result.panel));
       setPausedPanels((current) => current.filter((item) => !sentPanels.has(item.panel)));
@@ -515,13 +515,13 @@ export default function App() {
         return;
       }
 
-      const bytes = reply.results.reduce((sum, result) => sum + result.bytes, 0);
+      const bytes = totalSentBytes(reply.results);
       const sentLabel = `${reply.results.length} edited panel${
         reply.results.length === 1 ? "" : "s"
       }`;
       setNotice({
         tone: "ok",
-        text: `Sent to ${sentLabel}, ${bytes} bytes in total.${
+        text: `Sent to ${sentLabel}${bytes > 0 ? `, ${bytes.toLocaleString()} bytes in total` : ""}.${
           skipped.length > 0
             ? ` ${skipped.length} empty panel${skipped.length === 1 ? " was" : "s were"} left unchanged.`
             : ""
@@ -679,7 +679,8 @@ export default function App() {
               return (
                 <span key={metric.key} className={missing ? "sensor is-missing" : "sensor"}>
                   <em>{metric.label}</em>
-                  {missing ? "—" : `${Number(value).toFixed(metric.decimals)}${metric.unit}`}
+                  {" "}
+                  {missing ? "—" : formatMetricValue(value, metric)}
                 </span>
               );
             })}

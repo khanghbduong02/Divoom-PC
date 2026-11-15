@@ -833,6 +833,22 @@ code {
   flex: none;
 }
 
+.saved-panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.saved-panel-actions > button,
+.saved-panel-actions > .file-button {
+  flex: 1;
+}
+
+.saved-panel-actions .file-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

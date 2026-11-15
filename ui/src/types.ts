@@ -152,6 +152,17 @@ export interface SystemInfo {
   external_watch: ExternalWatchStatus;
 }
 
+export interface UpdateInfo {
+  current_version: string;
+  latest_version: string | null;
+  available: boolean;
+  can_install: boolean;
+  install_supported: boolean;
+  download_size: number | null;
+  notes: string | null;
+  tag: string | null;
+}
+
 export interface PresetMeta {
   id: string;
   name: string;

@@ -158,6 +158,33 @@ class SavedLibrary:
             self._write(data)
         return _meta(saved)
 
+    def save_panel_unique(self, name: str, panel: Panel) -> dict[str, object]:
+        """Save an imported panel without replacing an existing design."""
+        cleaned = _clean_name(name)
+        now = time.time()
+        with self._lock:
+            data = self._read()
+            names = {item.name.casefold() for item in data.panels}
+            candidate = cleaned
+            if candidate.casefold() in names:
+                stem = cleaned[:68].rstrip() or "Imported panel"
+                candidate = f"{stem} (imported)"
+                counter = 2
+                while candidate.casefold() in names:
+                    suffix = f" (imported {counter})"
+                    candidate = f"{stem[: 80 - len(suffix)].rstrip()}{suffix}"
+                    counter += 1
+            saved = SavedPanel(
+                id=uuid.uuid4().hex[:12],
+                name=candidate,
+                created_at=now,
+                updated_at=now,
+                panel=panel.model_copy(deep=True),
+            )
+            data.panels.append(saved)
+            self._write(data)
+        return _meta(saved)
+
     def get_theme(self, saved_id: str) -> SavedTheme:
         with self._lock:
             data = self._read()

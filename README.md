@@ -21,7 +21,11 @@ or the [latest GitHub release](https://github.com/khanghbduong02/Divoom-PC/relea
 The source checkout and exe build steps are below for development.
 
 1. **Put it anywhere** you like — Desktop, Documents, a folder on `D:`. There is no
-   installer and nothing else to download; the sensor helper is inside the exe.
+   installer and nothing else to download for the app itself; the sensor helper is
+   inside the exe.
+   The same file works on another Windows PC: Python, the editor, and the sensor
+   helper are bundled, so that PC needs no Python or Node installation. The first
+   run there offers the one-time sensor setup and downloads PawnIO if it is missing.
 2. **Double-click it.** Windows may show a blue *"Windows protected your PC"* box
    because the file is not code-signed: click **More info → Run anyway**. If Windows
    instead says the app can't run and nothing offers *Run anyway*, Smart App Control is
@@ -183,8 +187,9 @@ python build_exe.py
 Output: `server/dist/GateThemeStudio.exe` (one file, ~34 MB, no Python needed on the
 target PC). It contains the UI, previews, presets, LibreHardwareMonitor and the sensor
 setup script, so the one-time CPU permission prompt works on a clean PC; user data stays
-in `%APPDATA%`. Building requires the helper at `tools/LibreHardwareMonitor` (the build
-stops with a download hint if it is missing).
+in `%APPDATA%`. If `tools/LibreHardwareMonitor` is present it is bundled for offline
+setup; otherwise the setup script downloads the official release on the target PC.
+The PawnIO driver is installed with winget, with a verified direct download as fallback.
 
 The packaged build registers itself in `HKCU\...\CurrentVersion\Run` as
 `"…\GateThemeStudio.exe" --silent` while *Start with Windows* is on (it is on by

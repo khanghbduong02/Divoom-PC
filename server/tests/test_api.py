@@ -16,6 +16,7 @@ from gate_studio.config import ConfigStore
 from gate_studio.device.external import ExternalSnapshot
 from gate_studio.library import SavedLibrary
 from gate_studio.models import Layer
+from gate_studio.update import UpdateInfo
 
 
 @pytest.fixture()
@@ -378,6 +379,78 @@ def test_saved_panel_replaces_only_that_panel(client: TestClient) -> None:
     assert stored["panels"][0]["background"]["color"] == "#654321"
 
 
+def test_saved_panel_export_import_round_trip(client: TestClient) -> None:
+    buffer = io.BytesIO()
+    Image.new("RGB", (32, 32), (10, 20, 30)).save(buffer, format="PNG")
+    upload = client.post(
+        "/api/media",
+        files={"file": ("background.png", buffer.getvalue(), "image/png")},
+    )
+    assert upload.status_code == 200
+    image_name = upload.json()["name"]
+
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["background"] = {
+        "kind": "image",
+        "color": "#102030",
+        "image": image_name,
+        "fit": "crop",
+        "dim": 0,
+    }
+    theme["panels"][0]["layers"] = [
+        {
+            "kind": "text",
+            "source": "static",
+            "text": "Shared panel",
+            "x": 4,
+            "y": 8,
+            "w": 100,
+            "h": 20,
+        }
+    ]
+    assert client.put("/api/theme", json=theme).status_code == 200
+    saved = client.post(
+        "/api/library/panels", json={"panel": 0, "name": "Shared tile"}
+    ).json()["item"]
+
+    exported = client.get(f"/api/library/panels/{saved['id']}/export")
+    assert exported.status_code == 200
+    assert "attachment" in exported.headers["content-disposition"]
+    document = exported.json()
+    assert document["format"] == "gate-theme-studio-panel"
+    assert document["name"] == "Shared tile"
+    assert document["background_image"]["filename"].endswith(".png")
+    assert document["background_image"]["mime"] == "image/png"
+    assert document["background_image"]["data"]
+
+    imported = client.post(
+        "/api/library/panels/import",
+        files={"file": ("shared-tile.json", exported.content, "application/json")},
+    )
+    assert imported.status_code == 200
+    imported_item = imported.json()["item"]
+    assert imported_item["name"] == "Shared tile (imported)"
+    assert any(item["id"] == imported_item["id"] for item in imported.json()["library"]["panels"])
+
+    applied = client.post(
+        f"/api/library/panels/{imported_item['id']}/apply", json={"panel": 0}
+    )
+    assert applied.status_code == 200
+    panel = applied.json()["theme"]["panels"][0]
+    assert panel["background"]["kind"] == "image"
+    assert panel["background"]["image"] != image_name
+    assert panel["layers"][0]["text"] == "Shared panel"
+    assert client.get(f"/media/{panel['background']['image']}").status_code == 200
+
+
+def test_saved_panel_import_rejects_unknown_files(client: TestClient) -> None:
+    response = client.post(
+        "/api/library/panels/import",
+        files={"file": ("not-a-panel.json", b"{\"hello\": true}", "application/json")},
+    )
+    assert response.status_code == 422
+
+
 def test_saved_names_update_in_place(client: TestClient) -> None:
     client.post("/api/library/themes", json={"name": "Desk"})
     client.post("/api/library/themes", json={"name": "Desk"})
@@ -576,6 +649,79 @@ def test_system_reports_always_on_state(client: TestClient) -> None:
     assert body["auto_push"] is True
     assert "autostart" in body
     assert "last_push_at" in body
+
+
+def test_update_check_endpoint(client: TestClient, monkeypatch) -> None:
+    info = UpdateInfo(
+        current_version="0.2.1",
+        latest_version="0.2.2",
+        available=True,
+        can_install=True,
+        install_supported=True,
+        download_url="https://example.test/app.exe",
+        checksum_url="https://example.test/app.sha256",
+        checksum="a" * 64,
+        download_size=1234,
+        notes="Fixes",
+        tag="v0.2.2",
+    )
+    monkeypatch.setattr("gate_studio.api.check_for_update", lambda: info)
+
+    body = client.get("/api/update/check").json()
+    assert body["available"] is True
+    assert body["latest_version"] == "0.2.2"
+    assert body["can_install"] is True
+
+
+def test_update_install_downloads_and_schedules_a_restart(client: TestClient, monkeypatch) -> None:
+    info = UpdateInfo(
+        current_version="0.2.1",
+        latest_version="0.2.2",
+        available=True,
+        can_install=True,
+        install_supported=True,
+        download_url="https://example.test/app.exe",
+        checksum_url="https://example.test/app.sha256",
+        checksum="a" * 64,
+        download_size=1234,
+        notes=None,
+        tag="v0.2.2",
+    )
+    called: dict[str, object] = {}
+    monkeypatch.setattr("gate_studio.api.check_for_update", lambda: info)
+    monkeypatch.setattr(
+        "gate_studio.api.download_update",
+        lambda current, target: called.update(download=target) or (target / "GateThemeStudio-0.2.2.exe"),
+    )
+    monkeypatch.setattr(
+        "gate_studio.api.launch_updater",
+        lambda new_exe, **kwargs: called.update(launch=new_exe, options=kwargs),
+    )
+    monkeypatch.setattr("gate_studio.api.schedule_app_exit", lambda: called.update(exit=True))
+
+    response = client.post("/api/update/install")
+    assert response.status_code == 200
+    assert response.json() == {"started": True, "version": "0.2.2"}
+    assert called["exit"] is True
+    assert str(called["download"]).endswith("updates")
+
+
+def test_update_install_rejects_an_already_current_app(client: TestClient, monkeypatch) -> None:
+    info = UpdateInfo(
+        current_version="0.2.1",
+        latest_version="0.2.1",
+        available=False,
+        can_install=True,
+        install_supported=True,
+        download_url="https://example.test/app.exe",
+        checksum_url=None,
+        checksum=None,
+        download_size=None,
+        notes=None,
+        tag="v0.2.1",
+    )
+    monkeypatch.setattr("gate_studio.api.check_for_update", lambda: info)
+    assert client.post("/api/update/install").status_code == 409
 
 
 def test_push_settings_round_trip(client: TestClient) -> None:

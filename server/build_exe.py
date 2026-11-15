@@ -43,12 +43,8 @@ def main() -> int:
     if not (PACKAGE / "static" / "index.html").exists():
         print("The editor bundle is missing. Run `npm install && npm run build` in ui/ first.")
         return 1
-    if not (SENSOR_HELPER / "LibreHardwareMonitor.exe").exists() or not SENSOR_SETUP.exists():
-        print(
-            "The CPU sensor helper is missing. Put LibreHardwareMonitor 0.9.6 in "
-            f"{SENSOR_HELPER} (download it from the LHM GitHub releases) and keep "
-            f"{SENSOR_SETUP.name} there."
-        )
+    if not SENSOR_SETUP.exists():
+        print(f"The sensor setup script is missing: {SENSOR_SETUP}")
         return 1
 
     icon = make_icon(BUILD / "app.ico")
@@ -68,8 +64,6 @@ def main() -> int:
         f"{PACKAGE / 'presets'}{separator}gate_studio/presets",
         "--add-data",
         f"{PACKAGE / 'static'}{separator}gate_studio/static",
-        "--add-data",
-        f"{SENSOR_HELPER}{separator}tools/LibreHardwareMonitor",
         "--add-data",
         f"{SENSOR_SETUP}{separator}tools",
         "--hidden-import",
@@ -91,6 +85,16 @@ def main() -> int:
         "--hidden-import",
         "pystray._win32",
     ]
+    if (SENSOR_HELPER / "LibreHardwareMonitor.exe").exists():
+        # Bundle it when available so first-run setup works offline.  If this
+        # checkout does not have the ignored tools folder, the setup script
+        # downloads the official release on the target PC instead.
+        args.extend(
+            [
+                "--add-data",
+                f"{SENSOR_HELPER}{separator}tools/LibreHardwareMonitor",
+            ]
+        )
     if icon is not None:
         args += ["--icon", str(icon)]
     args.append(str(ROOT / "run_agent.py"))

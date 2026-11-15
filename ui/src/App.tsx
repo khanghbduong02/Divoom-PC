@@ -139,6 +139,7 @@ export default function App() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [importingPanel, setImportingPanel] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -379,6 +380,36 @@ export default function App() {
       });
     } catch (error) {
       setNotice(noticeFrom(error));
+    }
+  };
+
+  const exportSavedPanel = async (savedId: string) => {
+    try {
+      const { blob, filename } = await api.exportSavedPanel(savedId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setNotice({ tone: "info", text: "Panel downloaded. Share the JSON file with anyone who wants to use it." });
+    } catch (error) {
+      setNotice(noticeFrom(error));
+    }
+  };
+
+  const importSavedPanel = async (file: File) => {
+    setImportingPanel(true);
+    try {
+      const reply = await api.importSavedPanel(file);
+      setLibrary(reply.library);
+      setNotice({ tone: "ok", text: `Imported “${reply.item.name}” as a saved panel.` });
+    } catch (error) {
+      setNotice(noticeFrom(error));
+    } finally {
+      setImportingPanel(false);
     }
   };
 
@@ -727,6 +758,9 @@ export default function App() {
             onUpload={(file) => void upload(file)}
             onApplyPanelPreset={(presetId) => void applyPreset(presetId, selectedPanel)}
             onSavedPanel={(savedId) => void loadSavedPanel(savedId)}
+            onExportPanel={(savedId) => void exportSavedPanel(savedId)}
+            onImportPanel={(file) => void importSavedPanel(file)}
+            importingPanel={importingPanel}
             onSavePanel={beginSavePanel}
             onClearLayers={clearLayers}
           />

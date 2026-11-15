@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
 import socket
 import subprocess
@@ -19,7 +20,7 @@ from threading import Event, Lock, RLock, Thread
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -42,10 +43,23 @@ from .device import (
 from .library import SavedLibrary
 from .models import AppConfig, AppSettings, Background, DeviceConfig, Panel, PausedPanel, Theme
 from .native import NativePanel, build_items, save_background, setup_items
+from .panel_exchange import (
+    MAX_PANEL_FILE_BYTES,
+    build_panel_export,
+    export_filename,
+    parse_panel_import,
+)
 from .presets import list_presets, load_preset
 from .render import encode_jpeg, encode_png, render_all
 from .render.renderer import render_test_panel
 from .sensors import SensorCollector
+from .update import (
+    UpdateError,
+    check_for_update,
+    download_update,
+    launch_updater,
+    schedule_app_exit,
+)
 
 log = logging.getLogger(__name__)
 
@@ -963,6 +977,38 @@ def create_app(
             "supported": autostart_supported(),
         }
 
+    # -- updates -------------------------------------------------------
+    @app.get("/api/update/check")
+    def update_check() -> dict[str, object]:
+        try:
+            return check_for_update().as_dict()
+        except UpdateError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/api/update/install")
+    def update_install() -> dict[str, object]:
+        try:
+            info = check_for_update()
+        except UpdateError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if not info.available:
+            raise HTTPException(status_code=409, detail="Gate Theme Studio is already up to date.")
+        if not info.can_install:
+            raise HTTPException(
+                status_code=409,
+                detail="Updates can only be installed from the packaged Windows app.",
+            )
+        try:
+            new_exe = download_update(info, store.data_dir / "updates")
+        except UpdateError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        try:
+            launch_updater(new_exe, data_dir=store.data_dir / "updates")
+        except UpdateError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        schedule_app_exit()
+        return {"started": True, "version": info.latest_version}
+
     # -- device --------------------------------------------------------
     @app.post("/api/device/probe")
     def probe(body: ProbeRequest) -> dict[str, object]:
@@ -1114,6 +1160,37 @@ def create_app(
             item = state.library.save_panel(body.name, panel)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"item": item, "library": state.library.list()}
+
+    @app.get("/api/library/panels/{saved_id}/export")
+    def export_saved_panel(saved_id: str) -> Response:
+        try:
+            saved = state.library.get_panel(saved_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="saved panel not found") from exc
+        try:
+            payload = build_panel_export(saved, store.media_dir)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{export_filename(saved.name)}"'
+            },
+        )
+
+    @app.post("/api/library/panels/import")
+    async def import_saved_panel(file: UploadFile) -> dict[str, object]:
+        data = await file.read(MAX_PANEL_FILE_BYTES + 1)
+        if len(data) > MAX_PANEL_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="panel file must be 12 MB or smaller")
+        try:
+            imported = parse_panel_import(data, store)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        item = state.library.save_panel_unique(imported.name, imported.panel)
         return {"item": item, "library": state.library.list()}
 
     @app.post("/api/library/themes/{saved_id}/apply")

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Settings as SettingsModel, SystemInfo } from "../types";
+import type { Settings as SettingsModel, SystemInfo, UpdateInfo } from "../types";
 
 interface Props {
   open: boolean;
@@ -24,6 +24,36 @@ export default function Settings({ open, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  const checkForUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateError(null);
+    try {
+      setUpdate(await api.checkUpdate());
+    } catch (caught) {
+      setUpdate(null);
+      setUpdateError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const installUpdate = async () => {
+    setInstallingUpdate(true);
+    setUpdateError(null);
+    try {
+      await api.installUpdate();
+      setNote("Update downloaded. Gate Theme Studio will restart automatically.");
+    } catch (caught) {
+      setUpdateError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setInstallingUpdate(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +70,7 @@ export default function Settings({ open, onClose }: Props) {
         setError(caught instanceof Error ? caught.message : String(caught));
       }
     })();
+    void checkForUpdate();
   }, [open]);
 
   if (!open) {
@@ -257,6 +288,49 @@ export default function Settings({ open, onClose }: Props) {
                   <em>Only while you trust the network. Takes effect after a restart.</em>
                 </span>
               </label>
+            </section>
+
+            <section className="step">
+              <h3>Updates</h3>
+              {checkingUpdate ? (
+                <p className="hint">Checking for updates…</p>
+              ) : updateError ? (
+                <p className="hint is-error">{updateError}</p>
+              ) : update ? (
+                <p className="hint">
+                  {update.available
+                    ? `Version ${update.latest_version} is available. You are running ${update.current_version}.`
+                    : `You are running the latest version (${update.current_version}).`}
+                </p>
+              ) : (
+                <p className="hint">Update status has not been checked yet.</p>
+              )}
+              <div className="inline-row">
+                <button
+                  type="button"
+                  className="button-small"
+                  disabled={checkingUpdate || installingUpdate}
+                  onClick={() => void checkForUpdate()}
+                >
+                  Check again
+                </button>
+                {update?.available && (
+                  <button
+                    type="button"
+                    className="button-primary button-small"
+                    disabled={installingUpdate || !update.can_install}
+                    onClick={() => void installUpdate()}
+                  >
+                    {installingUpdate ? "Updating…" : "Update & restart"}
+                  </button>
+                )}
+              </div>
+              {update && !update.install_supported && (
+                <p className="hint">
+                  In-app updates are available in the downloadable Windows app. This source
+                  checkout can still check the latest version.
+                </p>
+              )}
             </section>
 
             <section className="step">

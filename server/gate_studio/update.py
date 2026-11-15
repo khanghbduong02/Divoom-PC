@@ -1,0 +1,375 @@
+"""Check GitHub Releases and install the portable Windows build in place."""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from . import __version__
+
+GITHUB_REPO = "khanghbduong02/Divoom-PC"
+LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+APP_ASSET_NAME = "GateThemeStudio.exe"
+CHECKSUM_ASSET_NAME = "GateThemeStudio.exe.sha256"
+USER_AGENT = "GateThemeStudio-updater"
+REQUEST_TIMEOUT = 12.0
+DOWNLOAD_TIMEOUT = 180.0
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
+
+
+class UpdateError(RuntimeError):
+    """An update cannot be checked, downloaded or started."""
+
+
+@dataclass(frozen=True)
+class UpdateInfo:
+    current_version: str
+    latest_version: str | None
+    available: bool
+    can_install: bool
+    install_supported: bool
+    download_url: str | None
+    checksum_url: str | None
+    checksum: str | None
+    download_size: int | None
+    notes: str | None
+    tag: str | None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "current_version": self.current_version,
+            "latest_version": self.latest_version,
+            "available": self.available,
+            "can_install": self.can_install,
+            "install_supported": self.install_supported,
+            "download_size": self.download_size,
+            "notes": self.notes,
+            "tag": self.tag,
+        }
+
+
+def install_supported() -> bool:
+    """The portable exe can replace itself; a source checkout cannot."""
+    return sys.platform == "win32" and bool(getattr(sys, "frozen", False))
+
+
+def _version_parts(value: str) -> tuple[int, ...]:
+    cleaned = str(value).strip().lstrip("vV").split("-", 1)[0].split("+", 1)[0]
+    return tuple(int(part) for part in re.findall(r"\d+", cleaned))
+
+
+def is_newer(candidate: str, current: str) -> bool:
+    """Compare dotted numeric versions without requiring packaging."""
+    left = _version_parts(candidate)
+    right = _version_parts(current)
+    if not left or not right:
+        return False
+    width = max(len(left), len(right))
+    return left + (0,) * (width - len(left)) > right + (0,) * (width - len(right))
+
+
+def _asset_by_name(assets: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    return next((asset for asset in assets if asset.get("name") == name), None)
+
+
+def _sha256_from_digest(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"sha256:([0-9a-fA-F]{64})", value.strip())
+    return match.group(1).lower() if match else None
+
+
+def _sha256_from_checksum(text: str) -> str | None:
+    match = re.search(r"\b([0-9a-fA-F]{64})\b", text)
+    return match.group(1).lower() if match else None
+
+
+def _request(client: httpx.Client | None, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    request_client = client or httpx
+    headers = {"User-Agent": USER_AGENT}
+    headers.update(kwargs.pop("headers", {}) or {})
+    try:
+        response = request_client.request(method, url, headers=headers, **kwargs)
+    except httpx.HTTPError as exc:
+        raise UpdateError("Could not reach GitHub to check for updates.") from exc
+    return response
+
+
+def check_for_update(
+    current_version: str | None = None,
+    client: httpx.Client | None = None,
+) -> UpdateInfo:
+    """Return the latest release details, without downloading anything."""
+    current = current_version or __version__
+    supported = install_supported()
+    response = _request(
+        client,
+        "GET",
+        LATEST_RELEASE_API,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT,
+        follow_redirects=True,
+    )
+    if response.status_code == 404:
+        raise UpdateError("No published Gate Theme Studio release was found.")
+    if response.status_code != 200:
+        raise UpdateError(f"GitHub returned HTTP {response.status_code} while checking for updates.")
+    try:
+        release = response.json()
+    except ValueError as exc:
+        raise UpdateError("GitHub returned an invalid release response.") from exc
+    if not isinstance(release, dict):
+        raise UpdateError("GitHub returned an invalid release response.")
+
+    tag = str(release.get("tag_name") or "").strip()
+    latest = tag.lstrip("vV") if tag else ""
+    if not latest:
+        raise UpdateError("The latest release has no version tag.")
+    assets = release.get("assets") or []
+    if not isinstance(assets, list):
+        assets = []
+    app_asset = _asset_by_name(assets, APP_ASSET_NAME)
+    if not app_asset or not app_asset.get("browser_download_url"):
+        raise UpdateError("The latest release has no GateThemeStudio.exe download.")
+    checksum_asset = _asset_by_name(assets, CHECKSUM_ASSET_NAME)
+    size_value = app_asset.get("size")
+    try:
+        size = int(size_value) if size_value is not None else None
+    except (TypeError, ValueError):
+        size = None
+    notes = release.get("body")
+    if notes is not None:
+        notes = str(notes).strip()[:4000] or None
+
+    return UpdateInfo(
+        current_version=current,
+        latest_version=latest,
+        available=is_newer(latest, current),
+        can_install=supported,
+        install_supported=supported,
+        download_url=str(app_asset["browser_download_url"]),
+        checksum_url=(
+            str(checksum_asset["browser_download_url"])
+            if checksum_asset and checksum_asset.get("browser_download_url")
+            else None
+        ),
+        checksum=_sha256_from_digest(app_asset.get("digest")),
+        download_size=size,
+        notes=notes,
+        tag=tag,
+    )
+
+
+def _download_checksum(info: UpdateInfo, client: httpx.Client | None) -> str:
+    if info.checksum:
+        return info.checksum
+    if not info.checksum_url:
+        raise UpdateError("The latest release has no SHA-256 checksum to verify the download.")
+    response = _request(
+        client,
+        "GET",
+        info.checksum_url,
+        timeout=REQUEST_TIMEOUT,
+        follow_redirects=True,
+    )
+    if response.status_code != 200:
+        raise UpdateError("Could not download the update checksum.")
+    checksum = _sha256_from_checksum(response.text)
+    if not checksum:
+        raise UpdateError("The update checksum file is invalid.")
+    return checksum
+
+
+def download_update(
+    info: UpdateInfo,
+    target_dir: Path,
+    client: httpx.Client | None = None,
+) -> Path:
+    """Download and verify the release executable, returning its local path."""
+    if not info.download_url:
+        raise UpdateError("The latest release has no downloadable app.")
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    version = re.sub(r"[^A-Za-z0-9._-]+", "-", info.latest_version or "latest").strip(".-") or "latest"
+    target = target_dir / f"GateThemeStudio-{version}.exe"
+    partial = target.with_suffix(".exe.download")
+    if partial.exists():
+        partial.unlink()
+
+    expected = _download_checksum(info, client)
+    hasher = hashlib.sha256()
+    total = 0
+    request_client = client or httpx
+    try:
+        with request_client.stream(
+            "GET",
+            info.download_url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=DOWNLOAD_TIMEOUT,
+            follow_redirects=True,
+        ) as response:
+            if response.status_code != 200:
+                raise UpdateError(f"GitHub returned HTTP {response.status_code} for the update.")
+            with partial.open("wb") as handle:
+                for chunk in response.iter_bytes(1024 * 1024):
+                    total += len(chunk)
+                    if total > MAX_DOWNLOAD_BYTES:
+                        raise UpdateError("The update file is unexpectedly large.")
+                    handle.write(chunk)
+                    hasher.update(chunk)
+    except httpx.HTTPError as exc:
+        partial.unlink(missing_ok=True)
+        raise UpdateError("The update download was interrupted.") from exc
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
+
+    if hasher.hexdigest().lower() != expected.lower():
+        partial.unlink(missing_ok=True)
+        raise UpdateError("The downloaded update did not match its SHA-256 checksum.")
+    if info.download_size is not None and total != info.download_size:
+        partial.unlink(missing_ok=True)
+        raise UpdateError("The downloaded update was incomplete.")
+
+    try:
+        os.replace(partial, target)
+    except OSError as exc:
+        partial.unlink(missing_ok=True)
+        raise UpdateError("Could not save the downloaded update.") from exc
+    return target
+
+
+def _ps_quote(value: object) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _restart_args() -> list[str]:
+    return [str(value) for value in sys.argv[1:]]
+
+
+def launch_updater(
+    new_exe: Path,
+    *,
+    current_exe: Path | None = None,
+    restart_args: list[str] | None = None,
+    data_dir: Path | None = None,
+) -> Path:
+    """Start a detached PowerShell helper that replaces the exe after exit."""
+    if sys.platform != "win32":
+        raise UpdateError("In-app updates are available in the Windows app only.")
+    new_exe = Path(new_exe).resolve()
+    target = Path(current_exe or sys.executable).resolve()
+    if not new_exe.is_file():
+        raise UpdateError("The downloaded update file is missing.")
+    if not target.is_file():
+        raise UpdateError("The running application path could not be found.")
+
+    script_dir = Path(data_dir) if data_dir else new_exe.parent
+    script_dir.mkdir(parents=True, exist_ok=True)
+    script = script_dir / "apply-update.ps1"
+    args = restart_args if restart_args is not None else _restart_args()
+    arg_array = "@(" + ", ".join(_ps_quote(arg) for arg in args) + ")"
+    script.write_text(
+        "\n".join(
+            [
+                "$ErrorActionPreference = 'Stop'",
+                f"$target = {_ps_quote(target)}",
+                f"$new = {_ps_quote(new_exe)}",
+                f"$backup = {_ps_quote(str(target) + '.old')}",
+                f"$selfPid = {os.getpid()}",
+                f"$restartArgs = {arg_array}",
+                "try { Wait-Process -Id $selfPid -Timeout 60 -ErrorAction SilentlyContinue } catch {}",
+                "Start-Sleep -Milliseconds 600",
+                "$replaced = $false",
+                "for ($i = 0; $i -lt 40; $i++) {",
+                "  try {",
+                "    if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force -ErrorAction Stop }",
+                "    Move-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop",
+                "    Copy-Item -LiteralPath $new -Destination $target -Force -ErrorAction Stop",
+                "    $replaced = $true",
+                "    break",
+                "  } catch {",
+                "    if (-not (Test-Path -LiteralPath $target) -and (Test-Path -LiteralPath $backup)) {",
+                "      try { Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction Stop } catch {}",
+                "    }",
+                "    Start-Sleep -Milliseconds 500",
+                "  }",
+                "}",
+                "if ($replaced) {",
+                "  try {",
+                "    $startArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
+                "    if ($restartArgs.Count -gt 0) { $startArgs.ArgumentList = $restartArgs }",
+                "    Start-Process @startArgs -ErrorAction Stop",
+                "    Remove-Item -LiteralPath $new -Force -ErrorAction SilentlyContinue } catch {",
+                "    if (Test-Path -LiteralPath $backup) {",
+                "      Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue",
+                "      Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
+                "      $fallbackArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
+                "      if ($restartArgs.Count -gt 0) { $fallbackArgs.ArgumentList = $restartArgs }",
+                "      Start-Process @fallbackArgs",
+                "    }",
+                "  }",
+                "} elseif (Test-Path -LiteralPath $backup) {",
+                "  Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
+                "  $fallbackArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
+                "  if ($restartArgs.Count -gt 0) { $fallbackArgs.ArgumentList = $restartArgs }",
+                "  Start-Process @fallbackArgs",
+                "}",
+                "Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue",
+                "",
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    try:
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-File",
+                str(script),
+            ],
+            cwd=str(script_dir),
+            creationflags=flags,
+            close_fds=True,
+        )
+    except OSError as exc:
+        raise UpdateError("Could not start the update helper.") from exc
+    return script
+
+
+def schedule_app_exit(delay: float = 1.2) -> None:
+    """Give the HTTP response time to leave before the updater takes over."""
+    import threading
+
+    def _exit() -> None:
+        time.sleep(delay)
+        os._exit(0)
+
+    threading.Thread(target=_exit, name="update-exit", daemon=True).start()
+
+
+__all__ = [
+    "UpdateError",
+    "UpdateInfo",
+    "check_for_update",
+    "download_update",
+    "install_supported",
+    "is_newer",
+    "launch_updater",
+    "schedule_app_exit",
+]

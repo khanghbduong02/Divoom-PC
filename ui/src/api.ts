@@ -10,6 +10,7 @@ import type {
   Settings,
   SystemInfo,
   Theme,
+  UpdateInfo,
 } from "./types";
 
 const TOKEN_KEY = "gate-studio-token";
@@ -58,26 +59,30 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    const body = payload as { error?: { message?: string; kind?: string; raw?: string; hint?: string }; detail?: string } | null;
-    const error = body?.error;
-    throw new ApiFailure(
-      response.status,
-      error?.message ?? body?.detail ?? `Request failed (${response.status})`,
-      error?.kind,
-      error?.raw,
-      error?.hint,
-    );
+    throw await responseFailure(response);
   }
   if (response.status === 204) {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+async function responseFailure(response: Response): Promise<ApiFailure> {
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  const body = payload as { error?: { message?: string; kind?: string; raw?: string; hint?: string }; detail?: string } | null;
+  const error = body?.error;
+  return new ApiFailure(
+    response.status,
+    error?.message ?? body?.detail ?? `Request failed (${response.status})`,
+    error?.kind,
+    error?.raw,
+    error?.hint,
+  );
 }
 
 export const api = {
@@ -101,6 +106,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ panel, name }),
     }),
+  exportSavedPanel: async (id: string) => {
+    const response = await fetch(`/api/library/panels/${encodeURIComponent(id)}/export`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!response.ok) throw await responseFailure(response);
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const match = /filename="?([^";]+)"?/.exec(disposition);
+    return { blob: await response.blob(), filename: match?.[1] ?? "gate-panel.json" };
+  },
+  importSavedPanel: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ item: SavedItem; library: SavedLibrary }>("/api/library/panels/import", {
+      method: "POST",
+      body: form,
+    });
+  },
   applySavedTheme: (id: string) =>
     request<{ theme: Theme }>(`/api/library/themes/${id}/apply`, { method: "POST" }),
   applySavedPanel: (id: string, panel: number) =>
@@ -118,6 +140,11 @@ export const api = {
       { method: "PUT", body: JSON.stringify(patch) },
     ),
   getSystem: () => request<SystemInfo>("/api/system"),
+  checkUpdate: () => request<UpdateInfo>("/api/update/check"),
+  installUpdate: () =>
+    request<{ started: boolean; version: string | null }>("/api/update/install", {
+      method: "POST",
+    }),
   installSensors: () =>
     request<{ started: boolean }>("/api/system/sensors/install", { method: "POST" }),
   setAutostart: (enabled: boolean) =>

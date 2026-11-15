@@ -21,6 +21,7 @@ interface Props {
   presets: PresetMeta[];
   savedPanels: SavedItem[];
   uploading: boolean;
+  importingPanel: boolean;
   applying: boolean;
   pausedPanel: PausedPanel | null;
   temperatureUnit: "c" | "f";
@@ -32,6 +33,8 @@ interface Props {
   onUpload: (file: File) => void;
   onApplyPanelPreset: (presetId: string) => void;
   onSavedPanel: (savedId: string) => void;
+  onExportPanel: (savedId: string) => void;
+  onImportPanel: (file: File) => void;
   onSavePanel: () => void;
   onApplyPanel: () => void;
   onPausePanel: () => void;
@@ -182,6 +185,7 @@ export default function Inspector({
   presets,
   savedPanels,
   uploading,
+  importingPanel,
   applying,
   pausedPanel,
   temperatureUnit,
@@ -193,6 +197,8 @@ export default function Inspector({
   onUpload,
   onApplyPanelPreset,
   onSavedPanel,
+  onExportPanel,
+  onImportPanel,
   onSavePanel,
   onApplyPanel,
   onPausePanel,
@@ -399,6 +405,34 @@ export default function Inspector({
               Save this panel with <strong>Save panel</strong> above, then reuse it on any screen.
             </p>
           )}
+          <div className="saved-panel-actions">
+            <button
+              type="button"
+              className="button-small"
+              disabled={!savedPanelChoice}
+              title="Download the selected saved panel as a file"
+              onClick={() => onExportPanel(savedPanelChoice)}
+            >
+              Export
+            </button>
+            <label className="file-button">
+              {importingPanel ? "Importing…" : "Import"}
+              <input
+                type="file"
+                accept="application/json,.json"
+                disabled={importingPanel}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onImportPanel(file);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+          <p className="hint">
+            Export the selected saved panel to share it. An import adds a new saved panel without
+            replacing an existing one.
+          </p>
         </div>
 
         <button

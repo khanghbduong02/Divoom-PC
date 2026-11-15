@@ -273,6 +273,26 @@ def _target_from_update_script(script: Path) -> Path | None:
     return Path(value) if value else None
 
 
+def _clean_pyinstaller_environment() -> dict[str, str]:
+    """Do not let a restarted PyInstaller app inherit the old temp folder.
+
+    A one-file app starts its child with ``_PYI_APPLICATION_HOME_DIR`` set. If
+    the app starts another copy without clearing that variable, the new copy
+    reuses the old ``_MEI`` directory after it has been deleted and fails to
+    load ``python313.dll`` before any Python code runs.
+    """
+    env = os.environ.copy()
+    for name in (
+        "_PYI_APPLICATION_HOME_DIR",
+        "_PYI_ARCHIVE_FILE",
+        "_PYI_PARENT_PROCESS_LEVEL",
+        "_MEIPASS2",
+        "_MEIPASS",
+    ):
+        env.pop(name, None)
+    return env
+
+
 def recover_from_failed_update() -> bool:
     """Finish an update that the old helper left sitting in the updates folder.
 
@@ -304,6 +324,7 @@ def recover_from_failed_update() -> bool:
         subprocess.Popen(
             [str(target)],
             cwd=str(target.parent),
+            env=_clean_pyinstaller_environment(),
             creationflags=flags,
             close_fds=True,
         )
@@ -351,6 +372,11 @@ def launch_updater(
                 "function Write-UpdateLog([string]$message) {",
                 "  try { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' ' + $message) -ErrorAction SilentlyContinue } catch {}",
                 "}",
+                "function Clear-PyInstallerEnvironment() {",
+                "  foreach ($name in @('_PYI_APPLICATION_HOME_DIR','_PYI_ARCHIVE_FILE','_PYI_PARENT_PROCESS_LEVEL','_MEIPASS2','_MEIPASS')) {",
+                "    Remove-Item -Path ('Env:' + $name) -ErrorAction SilentlyContinue",
+                "  }",
+                "}",
                 "trap { Write-UpdateLog ('fatal: ' + $_); exit 1 }",
                 "Write-UpdateLog ('helper started; target=' + $target + '; new=' + $new)",
                 "try { Set-Content -LiteralPath $ready -Value 'ready' -Encoding ASCII -ErrorAction Stop } catch { Write-UpdateLog ('ready marker failed: ' + $_) }",
@@ -376,6 +402,7 @@ def launch_updater(
                 "}",
                 "if ($replaced) {",
                 "  try {",
+                "    Clear-PyInstallerEnvironment",
                 "    $startArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
                 "    if ($restartArgs.Count -gt 0) { $startArgs.ArgumentList = $restartArgs }",
                 "    Start-Process @startArgs -ErrorAction Stop",
@@ -385,6 +412,7 @@ def launch_updater(
                 "    if (Test-Path -LiteralPath $backup) {",
                 "      Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue",
                 "      Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
+                "      Clear-PyInstallerEnvironment",
                 "      $fallbackArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
                 "      if ($restartArgs.Count -gt 0) { $fallbackArgs.ArgumentList = $restartArgs }",
                 "      Start-Process @fallbackArgs",
@@ -394,6 +422,7 @@ def launch_updater(
                 "} elseif (Test-Path -LiteralPath $backup) {",
                 "  Write-UpdateLog 'replacement failed; starting the previous version'",
                 "  Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
+                "  Clear-PyInstallerEnvironment",
                 "  $fallbackArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
                 "  if ($restartArgs.Count -gt 0) { $fallbackArgs.ArgumentList = $restartArgs }",
                 "  Start-Process @fallbackArgs",

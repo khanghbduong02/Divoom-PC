@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -118,6 +119,47 @@ def test_check_for_update_rejects_a_release_without_the_app(monkeypatch: pytest.
 
     with pytest.raises(update.UpdateError, match="no GateThemeStudio.exe"):
         update.check_for_update("0.2.1", client=client)
+
+
+def test_clean_pyinstaller_environment_drops_restart_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", r"C:\Temp\_MEIold")
+    monkeypatch.setenv("_PYI_ARCHIVE_FILE", r"C:\App.exe")
+    monkeypatch.setenv("_PYI_PARENT_PROCESS_LEVEL", "0")
+    monkeypatch.setenv("KEEP_ME", "yes")
+    env = update._clean_pyinstaller_environment()
+    assert "_PYI_APPLICATION_HOME_DIR" not in env
+    assert "_PYI_ARCHIVE_FILE" not in env
+    assert "_PYI_PARENT_PROCESS_LEVEL" not in env
+    assert env["KEEP_ME"] == "yes"
+
+
+def test_updater_helper_clears_pyinstaller_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if sys.platform != "win32":
+        pytest.skip("The in-app updater is Windows-only")
+    target = tmp_path / "GateThemeStudio.exe"
+    new = tmp_path / "GateThemeStudio-new.exe"
+    target.write_bytes(b"old")
+    new.write_bytes(b"new")
+
+    class FakeHelper:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            return None
+
+    def fake_popen(*args: object, **kwargs: object) -> FakeHelper:
+        (tmp_path / "apply-update.ready").write_text("ready", encoding="ascii")
+        return FakeHelper()
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+    script = update.launch_updater(
+        new, current_exe=target, restart_args=[], data_dir=tmp_path
+    )
+    text = script.read_text(encoding="utf-8-sig")
+    assert "Clear-PyInstallerEnvironment" in text
+    assert "_PYI_APPLICATION_HOME_DIR" in text
+    assert "_PYI_PARENT_PROCESS_LEVEL" in text
 
 
 def test_download_rejects_a_bad_checksum(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

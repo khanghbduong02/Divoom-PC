@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from gate_studio.api import _push, create_app
+from gate_studio.api import _push, _setup_native, create_app
 from gate_studio.config import ConfigStore
 from gate_studio.device.external import ExternalSnapshot
 from gate_studio.library import SavedLibrary
@@ -248,6 +248,16 @@ def test_send_uses_image_updates_when_native_has_no_lan(client: TestClient, monk
 
     assert client.post("/api/send").status_code == 200
     assert called == {"jpeg": True}
+
+
+def test_native_setup_without_lan_is_a_silent_fallback(client: TestClient) -> None:
+    state = client.app.state.gate
+    state.config.settings.native_stats = True
+    state.config.settings.allow_lan = False
+    state.last_error = None
+
+    assert _setup_native(state, state.applied_theme, [0]) is False
+    assert state.last_error is None
 
 
 def test_send_uses_the_draft_sent_with_apply(client: TestClient, monkeypatch) -> None:

@@ -527,12 +527,8 @@ def _setup_native(state: AppState, theme: Theme, panels: list[int]) -> bool:
     if not state.config.settings.native_stats:
         return False
     if not state.config.settings.allow_lan:
-        state.last_error = {
-            "kind": "device",
-            "message": "Stable stats need LAN mode so the Times Gate can fetch the panel background.",
-            "raw": None,
-            "hint": "Enable LAN access in Settings and restart Gate Theme Studio.",
-        }
+        # Callers already fall back to JPEG updates when LAN access is off.
+        # Do not leave a red "device error" behind for a supported fallback.
         return False
     targets = _active_native_panels(state, theme, panels)
     if not targets:
@@ -908,6 +904,7 @@ def create_app(
         if patch.native_stats is not None:
             settings.native_stats = patch.native_stats
             state.native_layouts.clear()
+            state.last_error = None
         if patch.external_watch is not None:
             if settings.external_watch != patch.external_watch:
                 state.external_snapshot = None
@@ -919,6 +916,8 @@ def create_app(
         restart_required = False
         if patch.allow_lan is not None and patch.allow_lan != settings.allow_lan:
             settings.allow_lan = patch.allow_lan
+            state.native_layouts.clear()
+            state.last_error = None
             restart_required = True
         if patch.temperature_unit is not None:
             settings.temperature_unit = patch.temperature_unit

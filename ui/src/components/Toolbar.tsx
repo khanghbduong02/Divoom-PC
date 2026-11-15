@@ -114,9 +114,9 @@ export default function Toolbar({
         <HelpIcon />
         <span className="label-wide">Help</span>
       </button>
-      <button type="button" className="button-quiet icon-text" onClick={onSettings} title="Settings">
+      <button type="button" className="button-quiet icon-text settings-button" onClick={onSettings} title="Open settings">
         <GearIcon />
-        <span className="label-wide">Settings</span>
+        <span>Settings</span>
       </button>
       <button type="button" className="button-quiet icon-text" onClick={onDiagnostics} title="Troubleshooting">
         <span className="label-wide">Troubleshooting</span>

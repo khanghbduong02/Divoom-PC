@@ -186,16 +186,31 @@ export default function Settings({ open, onClose }: Props) {
                   Native sensor updates
                   <em>
                     Sends readings as text on the Gate instead of re-uploading each panel.
-                    Requires “Let other devices on my network open the editor” so the Gate can
-                    fetch the static background.
+                    Needs LAN access so the Gate can fetch the static background.
                   </em>
                 </span>
               </label>
               {settings.native_stats && !settings.allow_lan && (
-                <p className="hint">
-                  Native updates need network access. Until you turn on “Let other devices on my
-                  network open the editor” below and restart, panels use regular image updates.
-                </p>
+                <div className="settings-callout">
+                  <p className="hint">
+                    Native updates are paused. The Gate must fetch the panel background from this PC
+                    over your local network. Until LAN access is on and Gate Theme Studio is
+                    restarted, panels use regular image updates.
+                  </p>
+                  <button
+                    type="button"
+                    className="button-small"
+                    disabled={busy}
+                    onClick={() =>
+                      void save(
+                        { allow_lan: true },
+                        "LAN access is on. Restart Gate Theme Studio for native panels to start.",
+                      )
+                    }
+                  >
+                    Allow LAN access
+                  </button>
+                </div>
               )}
             </section>
 
@@ -297,7 +312,7 @@ export default function Settings({ open, onClose }: Props) {
             </section>
 
             <section className="step">
-              <h3>Phones and other devices</h3>
+              <h3>LAN access</h3>
               <label className="check-row">
                 <input
                   type="checkbox"
@@ -306,8 +321,11 @@ export default function Settings({ open, onClose }: Props) {
                   onChange={(event) => void save({ allow_lan: event.target.checked })}
                 />
                 <span>
-                  Let other devices on my network open the editor
-                  <em>Only while you trust the network. Takes effect after a restart.</em>
+                  Allow LAN access (phones and other devices)
+                  <em>
+                    Lets the Gate fetch native backgrounds and lets phones on this network open
+                    the editor. Only while you trust the network. Takes effect after a restart.
+                  </em>
                 </span>
               </label>
             </section>

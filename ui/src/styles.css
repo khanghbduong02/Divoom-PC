@@ -1118,6 +1118,22 @@ code {
   font-weight: 600;
 }
 
+.settings-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e6d3a4;
+  border-radius: var(--radius);
+  background: #fbf3df;
+}
+
+.settings-callout .hint {
+  flex: 1 1 280px;
+  color: var(--ink);
+}
+
 .inline-row {
   display: flex;
   gap: 8px;

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -256,6 +257,61 @@ def _restart_args() -> list[str]:
     return [str(value) for value in sys.argv[1:]]
 
 
+_TARGET_LINE = re.compile(r"^\$target\s*=\s*'((?:[^']|'')*)'\s*$", re.MULTILINE)
+
+
+def _target_from_update_script(script: Path) -> Path | None:
+    """Read the install path an interrupted update helper was about to use."""
+    try:
+        text = script.read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+    match = _TARGET_LINE.search(text)
+    if not match:
+        return None
+    value = match.group(1).replace("''", "'").strip()
+    return Path(value) if value else None
+
+
+def recover_from_failed_update() -> bool:
+    """Finish an update that the old helper left sitting in the updates folder.
+
+    A copy of the new exe can be launched directly from
+    ``%APPDATA%\\GateThemeStudio\\updates`` after an interrupted update. If the
+    previous helper left ``apply-update.ps1`` behind, use its target path to put
+    this newer exe back in the installed location and start that copy.
+    """
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return False
+    here = Path(sys.executable).resolve()
+    target = _target_from_update_script(here.parent / "apply-update.ps1")
+    if target is None:
+        return False
+    target = target.resolve()
+    if target == here or not target.is_file():
+        return False
+    try:
+        shutil.copy2(here, target)
+    except OSError:
+        return False
+    try:
+        with (here.parent / "apply-update.log").open("a", encoding="utf-8") as log:
+            log.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} recovery: installed to {target}\n")
+    except OSError:
+        pass
+    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    try:
+        subprocess.Popen(
+            [str(target)],
+            cwd=str(target.parent),
+            creationflags=flags,
+            close_fds=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
 def launch_updater(
     new_exe: Path,
     *,
@@ -276,6 +332,9 @@ def launch_updater(
     script_dir = Path(data_dir) if data_dir else new_exe.parent
     script_dir.mkdir(parents=True, exist_ok=True)
     script = script_dir / "apply-update.ps1"
+    log = script_dir / "apply-update.log"
+    ready = script_dir / "apply-update.ready"
+    ready.unlink(missing_ok=True)
     args = restart_args if restart_args is not None else _restart_args()
     arg_array = "@(" + ", ".join(_ps_quote(arg) for arg in args) + ")"
     script.write_text(
@@ -287,7 +346,16 @@ def launch_updater(
                 f"$backup = {_ps_quote(str(target) + '.old')}",
                 f"$selfPid = {os.getpid()}",
                 f"$restartArgs = {arg_array}",
-                "try { Wait-Process -Id $selfPid -Timeout 60 -ErrorAction SilentlyContinue } catch {}",
+                f"$log = {_ps_quote(log)}",
+                f"$ready = {_ps_quote(ready)}",
+                "function Write-UpdateLog([string]$message) {",
+                "  try { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' ' + $message) -ErrorAction SilentlyContinue } catch {}",
+                "}",
+                "trap { Write-UpdateLog ('fatal: ' + $_); exit 1 }",
+                "Write-UpdateLog ('helper started; target=' + $target + '; new=' + $new)",
+                "try { Set-Content -LiteralPath $ready -Value 'ready' -Encoding ASCII -ErrorAction Stop } catch { Write-UpdateLog ('ready marker failed: ' + $_) }",
+                "try { Wait-Process -Id $selfPid -Timeout 60 -ErrorAction SilentlyContinue } catch { Write-UpdateLog ('wait failed: ' + $_) }",
+                "Write-UpdateLog 'application process exited'",
                 "Start-Sleep -Milliseconds 600",
                 "$replaced = $false",
                 "for ($i = 0; $i -lt 40; $i++) {",
@@ -296,8 +364,10 @@ def launch_updater(
                 "    Move-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop",
                 "    Copy-Item -LiteralPath $new -Destination $target -Force -ErrorAction Stop",
                 "    $replaced = $true",
+                "    Write-UpdateLog 'replacement complete'",
                 "    break",
                 "  } catch {",
+                "    Write-UpdateLog ('replace attempt ' + ($i + 1) + ' failed: ' + $_)",
                 "    if (-not (Test-Path -LiteralPath $target) -and (Test-Path -LiteralPath $backup)) {",
                 "      try { Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction Stop } catch {}",
                 "    }",
@@ -309,30 +379,39 @@ def launch_updater(
                 "    $startArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
                 "    if ($restartArgs.Count -gt 0) { $startArgs.ArgumentList = $restartArgs }",
                 "    Start-Process @startArgs -ErrorAction Stop",
+                "    Write-UpdateLog 'new process started'",
                 "    Remove-Item -LiteralPath $new -Force -ErrorAction SilentlyContinue } catch {",
+                "    Write-UpdateLog ('could not start new process: ' + $_)",
                 "    if (Test-Path -LiteralPath $backup) {",
                 "      Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue",
                 "      Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
                 "      $fallbackArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
                 "      if ($restartArgs.Count -gt 0) { $fallbackArgs.ArgumentList = $restartArgs }",
                 "      Start-Process @fallbackArgs",
+                "      Write-UpdateLog 'fallback process started'",
                 "    }",
                 "  }",
                 "} elseif (Test-Path -LiteralPath $backup) {",
+                "  Write-UpdateLog 'replacement failed; starting the previous version'",
                 "  Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue",
                 "  $fallbackArgs = @{ FilePath = $target; WorkingDirectory = (Split-Path -Parent $target) }",
                 "  if ($restartArgs.Count -gt 0) { $fallbackArgs.ArgumentList = $restartArgs }",
                 "  Start-Process @fallbackArgs",
                 "}",
+                "Remove-Item -LiteralPath $ready -Force -ErrorAction SilentlyContinue",
                 "Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue",
                 "",
             ]
         ),
         encoding="utf-8-sig",
     )
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    # DETACHED_PROCESS makes Windows PowerShell exit without running the script.
+    # A new process group with no console keeps the helper independent of the app.
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
+        subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+    )
     try:
-        subprocess.Popen(
+        helper = subprocess.Popen(
             [
                 "powershell.exe",
                 "-NoProfile",
@@ -349,7 +428,23 @@ def launch_updater(
         )
     except OSError as exc:
         raise UpdateError("Could not start the update helper.") from exc
-    return script
+
+    # Do not leave the app until the helper has really started. This turns a
+    # silent PowerShell failure into a visible message instead of a closed app.
+    deadline = time.monotonic() + 12.0
+    while time.monotonic() < deadline:
+        if ready.exists():
+            return script
+        if helper.poll() is not None:
+            break
+        time.sleep(0.1)
+    try:
+        helper.terminate()
+    except OSError:
+        pass
+    raise UpdateError(
+        "The update helper did not start. Gate Theme Studio is still running; try again."
+    )
 
 
 def schedule_app_exit(delay: float = 1.2) -> None:
@@ -371,5 +466,6 @@ __all__ = [
     "install_supported",
     "is_newer",
     "launch_updater",
+    "recover_from_failed_update",
     "schedule_app_exit",
 ]

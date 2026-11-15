@@ -24,6 +24,7 @@ from .config import ConfigStore
 from .device import discover_cloud
 from .device.errors import DeviceError
 from .sensor_setup import ensure_sensor_helper
+from .update import recover_from_failed_update
 
 log = logging.getLogger("gate_studio")
 
@@ -184,6 +185,8 @@ def run_tray_session(server: uvicorn.Server, api: LocalApi, url: str, settings: 
 
 
 def main(argv: list[str] | None = None) -> None:
+    if recover_from_failed_update():
+        return
     args = parse_args(argv)
     store = ConfigStore(Path(args.data_dir) if args.data_dir else None)
     config = store.load()

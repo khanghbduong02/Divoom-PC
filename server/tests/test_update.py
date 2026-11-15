@@ -35,6 +35,23 @@ def test_numeric_versions_compare_correctly() -> None:
     assert not update.is_newer("0.2.0", "0.2.1")
 
 
+def test_target_from_update_script(tmp_path: Path) -> None:
+    script = tmp_path / "apply-update.ps1"
+    script.write_text(
+        "$target = 'C:\\Users\\test\\GateThemeStudio.exe'\n$new = 'C:\\Temp\\new.exe'\n",
+        encoding="utf-8-sig",
+    )
+    assert update._target_from_update_script(script) == Path(
+        r"C:\Users\test\GateThemeStudio.exe"
+    )
+
+
+def test_target_from_update_script_rejects_missing_target(tmp_path: Path) -> None:
+    script = tmp_path / "apply-update.ps1"
+    script.write_text("$new = 'C:\\Temp\\new.exe'\n", encoding="utf-8-sig")
+    assert update._target_from_update_script(script) is None
+
+
 def test_check_for_update_reads_the_release_assets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(update, "install_supported", lambda: True)
     client = FakeClient(

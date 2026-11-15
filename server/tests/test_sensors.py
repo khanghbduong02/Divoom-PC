@@ -91,6 +91,65 @@ def test_lhm_web_payload_uses_core_max_when_package_is_absent() -> None:
     assert parse_lhm_payload(payload)["cpu_temp"] == 55.5
 
 
+def test_lhm_reads_amd_gpu_load_vram_and_fan_control() -> None:
+    payload = {
+        "Children": [
+            {
+                "Text": "AMD Radeon RX 7800 XT",
+                "Children": [
+                    {"Text": "GPU Core", "Type": "Temperature", "SensorId": "/gpu-amd/0/temperature/0", "Value": "47.0 °C"},
+                    {"Text": "GPU Core", "Type": "Load", "SensorId": "/gpu-amd/0/load/0", "Value": "0.0 %"},
+                    {"Text": "GPU Memory Used", "Type": "Data", "SensorId": "/gpu-amd/0/data/0", "Value": "3000.0 MB"},
+                    {"Text": "GPU Memory Total", "Type": "Data", "SensorId": "/gpu-amd/0/data/2", "Value": "12000.0 MB"},
+                    {"Text": "GPU Fan", "Type": "Control", "SensorId": "/gpu-amd/0/control/0", "Value": "35.0 %"},
+                    {"Text": "GPU Fan", "Type": "Fan", "SensorId": "/gpu-amd/0/fan/0", "Value": "1200 RPM"},
+                ],
+            }
+        ]
+    }
+    values = parse_lhm_payload(payload)
+    assert values["gpu_temp"] == 47.0
+    assert values["gpu_percent"] == 0.0
+    assert values["vram_percent"] == 25.0
+    assert values["fan_percent"] == 35.0
+
+
+def test_lhm_reads_intel_integrated_gpu_shared_memory() -> None:
+    payload = {
+        "Children": [
+            {
+                "Text": "Intel UHD Graphics",
+                "Children": [
+                    {"Text": "GPU Core", "Type": "Temperature", "SensorId": "/gpu-intel-integrated/0/temperature/0", "Value": "45.0 °C"},
+                    {"Text": "D3D 3D", "Type": "Load", "SensorId": "/gpu-intel-integrated/0/load/3", "Value": "12.0 %"},
+                    {"Text": "D3D Dedicated Memory Used", "Type": "Data", "SensorId": "/gpu-intel-integrated/0/data/0", "Value": "512.0 MB"},
+                    {"Text": "D3D Shared Memory Used", "Type": "Data", "SensorId": "/gpu-intel-integrated/0/data/1", "Value": "2048.0 MB"},
+                    {"Text": "D3D Shared Memory Total", "Type": "Data", "SensorId": "/gpu-intel-integrated/0/data/2", "Value": "8192.0 MB"},
+                ],
+            }
+        ]
+    }
+    values = parse_lhm_payload(payload)
+    assert values["gpu_temp"] == 45.0
+    assert values["gpu_percent"] == 12.0
+    assert values["vram_percent"] == 25.0
+
+
+def test_lhm_does_not_report_fan_rpm_as_a_percentage() -> None:
+    payload = {
+        "Children": [
+            {
+                "Text": "AMD Radeon",
+                "Children": [
+                    {"Text": "GPU Core", "Type": "Temperature", "SensorId": "/gpu-amd/0/temperature/0", "Value": "40.0 °C"},
+                    {"Text": "GPU Fan", "Type": "Fan", "SensorId": "/gpu-amd/0/fan/0", "Value": "1200 RPM"},
+                ],
+            }
+        ]
+    }
+    assert parse_lhm_payload(payload)["fan_percent"] is None
+
+
 def test_collector_survives_a_failing_hardware_reader(monkeypatch) -> None:
     collector = SensorCollector()
 

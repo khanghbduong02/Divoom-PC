@@ -362,7 +362,6 @@ class AppState:
             device.port,
             device.local_token,
             device.protocol,
-            timeout=4.0,
         )
         try:
             reply = transport.get_all_conf()

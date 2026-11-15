@@ -147,6 +147,48 @@ def test_silent_socket_is_reported_as_timeout() -> None:
         listener.close()
 
 
+class _JsonClient:
+    """Returns one canned device reply without opening a socket."""
+
+    def __init__(self, body: dict) -> None:
+        self.body = body
+
+    def post(self, *args: object, **kwargs: object) -> httpx.Response:
+        return httpx.Response(200, json=self.body)
+
+    def close(self) -> None:
+        pass
+
+
+def test_device_return_code_timeout_is_reported_as_timeout() -> None:
+    gate = DeviceTransport(
+        "127.0.0.1",
+        9000,
+        TOKEN,
+        HW402,
+        client=_JsonClient({"ReturnCode": 1, "ReturnMessage": "command timeout"}),
+    )
+    with pytest.raises(DeviceError) as info:
+        gate.get_all_conf()
+    assert info.value.kind is DeviceErrorKind.TIMEOUT
+    assert "command timeout" in info.value.message
+    assert "power-cycle" in (info.value.hint or "").lower()
+
+
+def test_device_return_code_error_is_not_treated_as_success() -> None:
+    gate = DeviceTransport(
+        "127.0.0.1",
+        9000,
+        TOKEN,
+        HW402,
+        client=_JsonClient({"ReturnCode": 1, "ReturnMessage": "Only accept JSON parameters"}),
+    )
+    with pytest.raises(DeviceError) as info:
+        gate.get_all_conf()
+    assert info.value.kind is DeviceErrorKind.DEVICE
+    assert "Only accept JSON parameters" in info.value.message
+
+
 def test_send_frame_encodes_jpeg_and_panel_mask(fake_gate: int) -> None:
     with DeviceTransport("127.0.0.1", fake_gate, TOKEN, HW400) as gate:
         gate.send_frame(b"\xff\xd8fake-jpeg", panels=[2], pic_id=7)

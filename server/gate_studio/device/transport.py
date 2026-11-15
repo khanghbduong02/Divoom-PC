@@ -13,6 +13,7 @@ request body here.
 from __future__ import annotations
 
 import base64
+import time
 from dataclasses import dataclass, field
 from threading import Lock
 
@@ -30,6 +31,12 @@ ENDPOINTS: dict[str, tuple[int, str]] = {
 }
 
 PANEL_COUNT = 5
+
+#: The Times Gate can take several seconds to answer while its Wi-Fi stack is
+#: busy. A four-second read timeout produced false "device asleep" errors even
+#: though the device answered a few seconds later.
+DEFAULT_TIMEOUT = 12.0
+PROBE_TIMEOUT = 12.0
 
 
 def lcd_mask(panels: list[int] | tuple[int, ...]) -> list[int]:
@@ -122,7 +129,7 @@ class DeviceTransport:
         port: int | None = None,
         local_token: int | None = None,
         protocol: str | None = None,
-        timeout: float = 4.0,
+        timeout: float = DEFAULT_TIMEOUT,
         client: httpx.Client | None = None,
     ) -> None:
         self.host = host.strip()
@@ -156,50 +163,61 @@ class DeviceTransport:
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def _post(self, payload: dict[str, object]) -> dict[str, object]:
+    def _post(
+        self, payload: dict[str, object], *, retry_read_timeout: bool = False
+    ) -> dict[str, object]:
         body = dict(payload)
         if self.local_token is not None:
             body["LocalToken"] = self.local_token
         command = str(body.get("Command", ""))
-        try:
-            response = self._client.post(self.url, json=body, timeout=self.timeout)
-        except httpx.ConnectTimeout as exc:
-            raise DeviceError(
-                DeviceErrorKind.TIMEOUT,
-                f"No reply from {self.host} within {self.timeout:g}s while connecting to port {self.port}.",
-                hint=(
-                    "The device is off, asleep or on another network — or this port is closed "
-                    "(wrong hardware revision: 80 for HW 400, 9000 for HW 402)."
-                ),
-            ) from exc
-        except httpx.ReadTimeout as exc:
-            raise DeviceError(
-                DeviceErrorKind.TIMEOUT,
-                f"{self.host}:{self.port} accepted the connection but did not answer in "
-                f"{self.timeout:g}s.",
-                hint="The device may be busy or asleep. Try again, then power-cycle it.",
-            ) from exc
-        except httpx.ConnectError as exc:
-            detail = str(exc).lower()
-            if "refused" in detail or "10061" in detail:
+        attempts = 2 if retry_read_timeout else 1
+        for attempt in range(attempts):
+            try:
+                response = self._client.post(self.url, json=body, timeout=self.timeout)
+                break
+            except (httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
+                if attempt + 1 < attempts:
+                    time.sleep(0.4)
+                    continue
                 raise DeviceError(
-                    DeviceErrorKind.REFUSED,
-                    f"Nothing is listening on {self.host}:{self.port}.",
+                    DeviceErrorKind.TIMEOUT,
+                    f"{self.host}:{self.port} accepted the connection but did not answer in "
+                    f"{self.timeout:g}s.",
                     hint=(
-                        "The host is reachable but this port is closed. The Times Gate has two "
-                        "hardware revisions: try the other port (80 for HW 400, 9000 for HW 402)."
+                        "The device may be busy or asleep. Try again in a few seconds; "
+                        "if it still does not answer, power-cycle it."
                     ),
                 ) from exc
-            raise DeviceError(
-                DeviceErrorKind.NETWORK,
-                f"Could not reach {self.host}.",
-                hint="Is the device powered on and on the same Wi-Fi network as this PC?",
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise DeviceError(
-                DeviceErrorKind.NETWORK,
-                f"Connection to {self.host} failed: {exc.__class__.__name__}.",
-            ) from exc
+            except httpx.ConnectTimeout as exc:
+                raise DeviceError(
+                    DeviceErrorKind.TIMEOUT,
+                    f"No reply from {self.host} within {self.timeout:g}s while connecting to port {self.port}.",
+                    hint=(
+                        "The device is off, asleep or on another network — or this port is closed "
+                        "(wrong hardware revision: 80 for HW 400, 9000 for HW 402)."
+                    ),
+                ) from exc
+            except httpx.ConnectError as exc:
+                detail = str(exc).lower()
+                if "refused" in detail or "10061" in detail:
+                    raise DeviceError(
+                        DeviceErrorKind.REFUSED,
+                        f"Nothing is listening on {self.host}:{self.port}.",
+                        hint=(
+                            "The host is reachable but this port is closed. The Times Gate has two "
+                            "hardware revisions: try the other port (80 for HW 400, 9000 for HW 402)."
+                        ),
+                    ) from exc
+                raise DeviceError(
+                    DeviceErrorKind.NETWORK,
+                    f"Could not reach {self.host}.",
+                    hint="Is the device powered on and on the same Wi-Fi network as this PC?",
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise DeviceError(
+                    DeviceErrorKind.NETWORK,
+                    f"Connection to {self.host} failed: {exc.__class__.__name__}.",
+                ) from exc
 
         raw = response.text[:2000]
         try:
@@ -219,8 +237,10 @@ class DeviceTransport:
             )
 
         error_code = data.get("error_code", data.get("ErrorCode", 0))
+        return_code = data.get("ReturnCode", data.get("returnCode", 0))
         message = str(data.get("error_message") or data.get("ErrorMessage") or "")
-        if _token_error(error_code, message):
+        return_message = str(data.get("ReturnMessage") or data.get("return_message") or message)
+        if _token_error(error_code, message) or _token_error(return_code, return_message):
             raise DeviceError(
                 DeviceErrorKind.TOKEN,
                 "The device answered but rejected the request: LocalToken is missing or wrong.",
@@ -228,6 +248,19 @@ class DeviceTransport:
                 hint=(
                     "Open the Divoom app, select the device, and copy the number shown under its "
                     "settings into the LocalToken field."
+                ),
+            )
+        if return_code not in (0, "0", None, ""):
+            timed_out = "timeout" in return_message.lower()
+            raise DeviceError(
+                DeviceErrorKind.TIMEOUT if timed_out else DeviceErrorKind.DEVICE,
+                f"{self.host}:{self.port} answered but reported: {return_message or return_code}",
+                raw=raw,
+                hint=(
+                    "The device is busy. Wait a few seconds and try again; if it still "
+                    "fails, power-cycle the display."
+                    if timed_out
+                    else None
                 ),
             )
         if error_code not in (0, "0", None, ""):
@@ -239,8 +272,12 @@ class DeviceTransport:
         return data
 
     # -- commands ------------------------------------------------------
-    def get_all_conf(self) -> dict[str, object]:
-        return self._post({"Command": "Channel/GetAllConf"})
+    def get_all_conf(self, *, retry_read_timeout: bool = True) -> dict[str, object]:
+        # Safe to retry: it asks for state and never changes the display.
+        return self._post(
+            {"Command": "Channel/GetAllConf"},
+            retry_read_timeout=retry_read_timeout,
+        )
 
     def reset_pic_id(self) -> dict[str, object]:
         return self._post({"Command": "Draw/ResetHttpGifId"})
@@ -331,7 +368,7 @@ def probe_endpoint(
     host: str,
     protocol: str,
     local_token: int | None = None,
-    timeout: float = 2.5,
+    timeout: float = PROBE_TIMEOUT,
 ) -> ProbeOutcome:
     """Ask one revision's endpoint whether a Times Gate answers there."""
     port = ENDPOINTS[protocol][0]
@@ -345,7 +382,8 @@ def probe_endpoint(
     )
     try:
         with DeviceTransport(host, port, local_token, protocol, timeout=timeout) as transport:
-            reply = transport.get_all_conf()
+            # A probe already has a bounded UI wait; one long timeout is enough.
+            reply = transport.get_all_conf(retry_read_timeout=False)
             outcome.ok = True
             outcome.kind = "ok"
             outcome.device_name = _device_name(reply)
@@ -366,7 +404,7 @@ def probe_endpoint(
 def probe_host(
     host: str,
     local_token: int | None = None,
-    timeout: float = 2.5,
+    timeout: float = PROBE_TIMEOUT,
 ) -> list[ProbeOutcome]:
     """Probe both hardware revisions so the wizard can keep whichever answered."""
     return [

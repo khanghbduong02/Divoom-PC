@@ -17,6 +17,7 @@ import re
 import sys
 import time
 import urllib.request
+from dataclasses import dataclass
 
 RETRY_SECONDS = 30.0
 LHM_REFRESH_SECONDS = 2.0
@@ -31,8 +32,8 @@ SENSOR_NAMESPACES: tuple[tuple[str, str], ...] = (
 CPU_TEMP_HINT = (
     "Windows has no unprivileged CPU-temperature API. The app can install "
     "LibreHardwareMonitor and switch on its local sensor server (Troubleshooting → "
-    "Enable CPU temperature); the reading appears within 30 seconds. GPU "
-    "temperatures work without it."
+    "Enable CPU temperature); the reading appears within 30 seconds. NVIDIA GPU "
+    "readings work without it; AMD and Intel GPU readings need it."
 )
 
 NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
@@ -51,10 +52,110 @@ def _number(raw: object) -> float | None:
         return None
 
 
+@dataclass
+class _GpuReadings:
+    """One physical GPU's sensors, collected before choosing a primary GPU."""
+
+    key: str
+    vendor: str
+    temp_core: float | None = None
+    temp_any: float | None = None
+    load_core: float | None = None
+    load_3d: float | None = None
+    memory_used: float | None = None
+    memory_total: float | None = None
+    dedicated_used: float | None = None
+    dedicated_total: float | None = None
+    shared_used: float | None = None
+    shared_total: float | None = None
+    fan_control: float | None = None
+
+    @property
+    def score(self) -> int:
+        """Prefer the GPU with the most usable readings, then a dGPU over an iGPU."""
+        score = 0
+        score += 4 if self.temp_core is not None or self.temp_any is not None else 0
+        score += 4 if self.load_core is not None else 0
+        score += 1 if self.load_3d is not None else 0
+        score += 4 if self.memory_pair is not None else 0
+        score += 2 if self.fan_control is not None else 0
+        score += 3 if self.vendor in ("amd", "nvidia") else 0
+        return score
+
+    @property
+    def memory_pair(self) -> tuple[float, float] | None:
+        for used, total in (
+            (self.memory_used, self.memory_total),
+            (self.dedicated_used, self.dedicated_total),
+            (self.shared_used, self.shared_total),
+        ):
+            if used is not None and total is not None and total > 0:
+                return used, total
+        return None
+
+
+def _percent(used: float | None, total: float | None) -> float | None:
+    if used is None or total is None or total <= 0:
+        return None
+    return round(max(0.0, min(100.0, used / total * 100.0)), 1)
+
+
+def _gpu_group(identifier: str) -> tuple[str, str] | None:
+    """Return ``(/gpu-amd/0, amd)``-style group and vendor for a GPU sensor id."""
+    if not identifier.startswith("/gpu"):
+        return None
+    parts = identifier.split("/")
+    if len(parts) < 4:
+        return None
+    vendor = parts[1].removeprefix("gpu-")
+    return "/".join(parts[:3]), vendor
+
+
+def _add_gpu_sensor(
+    gpu: _GpuReadings,
+    kind: str,
+    name: str,
+    value: float,
+) -> None:
+    """Map LibreHardwareMonitor's sensor names for NVIDIA, AMD and Intel GPUs."""
+    if kind == "temperature":
+        if "core" in name or name in ("gpu", "gpu temperature"):
+            if gpu.temp_core is None:
+                gpu.temp_core = value
+        elif "hot spot" in name or "junction" in name or "gpu" in name:
+            if gpu.temp_any is None:
+                gpu.temp_any = value
+    elif kind == "load":
+        if "memory" in name:
+            return
+        if name in ("gpu core", "gpu") or ("core" in name and "soc" not in name):
+            if gpu.load_core is None:
+                gpu.load_core = value
+        elif "3d" in name or "render" in name:
+            if gpu.load_3d is None:
+                gpu.load_3d = value
+    elif kind in ("data", "smalldata"):
+        if "gpu memory used" in name:
+            gpu.memory_used = value
+        elif "gpu memory total" in name:
+            gpu.memory_total = value
+        elif "d3d dedicated memory used" in name:
+            gpu.dedicated_used = value
+        elif "d3d dedicated memory total" in name:
+            gpu.dedicated_total = value
+        elif "d3d shared memory used" in name:
+            gpu.shared_used = value
+        elif "d3d shared memory total" in name:
+            gpu.shared_total = value
+    elif kind == "control" and "fan" in name:
+        if gpu.fan_control is None:
+            gpu.fan_control = value
+
+
 def parse_lhm_payload(payload: object) -> dict[str, float | None]:
     """Read CPU/GPU values out of LibreHardwareMonitor's ``data.json`` tree."""
     cpu_package = cpu_tctl = cpu_max = cpu_average = cpu_any = None
-    gpu_temp = gpu_load = fan = None
+    gpus: dict[str, _GpuReadings] = {}
 
     stack = [payload]
     while stack:
@@ -71,7 +172,6 @@ def parse_lhm_payload(payload: object) -> dict[str, float | None]:
         if value is None:
             continue
         is_cpu = identifier.startswith(("/intelcpu", "/amdcpu", "/cpu"))
-        is_gpu = identifier.startswith(("/gpu", "/gpu-nvidia", "/gpu-amd", "/gpu-intel"))
         if kind == "temperature" and is_cpu:
             if "package" in name and cpu_package is None:
                 cpu_package = value
@@ -83,23 +183,31 @@ def parse_lhm_payload(payload: object) -> dict[str, float | None]:
                 cpu_average = value
             elif "distance" not in name and cpu_any is None:
                 cpu_any = value
-        elif kind == "temperature" and is_gpu:
-            if ("core" in name or "gpu" in name) and gpu_temp is None:
-                gpu_temp = value
-        elif kind == "load" and is_gpu and "core" in name:
-            gpu_load = value
-        elif kind == "fan" and is_gpu and fan is None:
-            fan = value
+            continue
+        group = _gpu_group(identifier)
+        if group is None:
+            continue
+        key, vendor = group
+        gpu = gpus.setdefault(key, _GpuReadings(key=key, vendor=vendor))
+        _add_gpu_sensor(gpu, kind, name, value)
 
     cpu_temp = cpu_package
     for candidate in (cpu_tctl, cpu_max, cpu_average, cpu_any):
         if cpu_temp is None:
             cpu_temp = candidate
+    gpu = max(gpus.values(), key=lambda item: (item.score, item.key)) if gpus else None
     return {
         "cpu_temp": cpu_temp,
-        "gpu_temp": gpu_temp,
-        "gpu_percent": gpu_load,
-        "fan_percent": fan,
+        "gpu_temp": (gpu.temp_core if gpu and gpu.temp_core is not None else gpu.temp_any if gpu else None),
+        "gpu_percent": (gpu.load_core if gpu and gpu.load_core is not None else gpu.load_3d if gpu else None),
+        "vram_percent": (_percent(*gpu.memory_pair) if gpu and gpu.memory_pair else None),
+        # A fan's RPM is not a percentage. Only expose the Control sensor,
+        # which LHM reports in percent; otherwise leave it as "--".
+        "fan_percent": (
+            round(max(0.0, min(100.0, gpu.fan_control)), 1)
+            if gpu and gpu.fan_control is not None
+            else None
+        ),
     }
 
 
@@ -156,7 +264,7 @@ class HardwareReader:
             pass
         try:
             fan = pynvml.nvmlDeviceGetFanSpeed(handle)
-            if fan:
+            if fan is not None:
                 values["fan_percent"] = float(fan)
         except Exception:  # noqa: BLE001
             pass
@@ -216,9 +324,7 @@ class HardwareReader:
 
         cpu_temp: float | None = None
         cpu_package: float | None = None
-        gpu_temp: float | None = None
-        gpu_load: float | None = None
-        fan: float | None = None
+        gpus: dict[str, _GpuReadings] = {}
 
         for sensor in sensors:
             identifier = (getattr(sensor, "Identifier", "") or "").lower()
@@ -231,25 +337,31 @@ class HardwareReader:
             if value != value:  # NaN
                 continue
             is_cpu = "cpu" in identifier
-            is_gpu = "gpu" in identifier
             if kind == "temperature" and is_cpu:
                 if "package" in name or "core average" in name or name == "cpu":
                     cpu_package = value if cpu_package is None else cpu_package
                 elif cpu_temp is None:
                     cpu_temp = value
-            elif kind == "temperature" and is_gpu:
-                if "core" in name or "gpu" in name:
-                    gpu_temp = value if gpu_temp is None else gpu_temp
-            elif kind == "load" and is_gpu and "core" in name:
-                gpu_load = value
-            elif kind == "fan" and is_gpu and fan is None:
-                fan = value  # RPM on most boards; only used when NVML has no percentage
+                continue
+            group = _gpu_group(identifier)
+            if group is None:
+                continue
+            key, vendor = group
+            gpu = gpus.setdefault(key, _GpuReadings(key=key, vendor=vendor))
+            _add_gpu_sensor(gpu, kind, name, value)
+
+        gpu = max(gpus.values(), key=lambda item: (item.score, item.key)) if gpus else None
 
         return {
             "cpu_temp": cpu_package if cpu_package is not None else cpu_temp,
-            "gpu_temp": gpu_temp,
-            "gpu_percent": gpu_load,
-            "fan_percent": fan,
+            "gpu_temp": (gpu.temp_core if gpu and gpu.temp_core is not None else gpu.temp_any if gpu else None),
+            "gpu_percent": (gpu.load_core if gpu and gpu.load_core is not None else gpu.load_3d if gpu else None),
+            "vram_percent": (_percent(*gpu.memory_pair) if gpu and gpu.memory_pair else None),
+            "fan_percent": (
+                round(max(0.0, min(100.0, gpu.fan_control)), 1)
+                if gpu and gpu.fan_control is not None
+                else None
+            ),
         }
 
     def libre_hardware_monitor(self) -> dict[str, float | None]:

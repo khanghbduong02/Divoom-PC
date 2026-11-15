@@ -268,8 +268,8 @@ resume them. The watch and check interval are in **Settings → Other apps**.
 | Metric | Source |
 | --- | --- |
 | CPU %, RAM %, disk %, network up/down | psutil |
-| GPU % / temp / VRAM / fan | NVML (`nvidia-ml-py`), NVIDIA only |
-| CPU temp, AMD/Intel GPU temp | LibreHardwareMonitor's local web server, if it is running |
+| GPU % / temp / VRAM / fan | NVML (`nvidia-ml-py`) for NVIDIA; LibreHardwareMonitor for AMD and Intel |
+| CPU temp | LibreHardwareMonitor's local web server, if it is running |
 
 Metrics the machine cannot supply render as `--`, never as a wrong number. Windows has
 no unprivileged CPU-temperature API, so CPU temperature needs **LibreHardwareMonitor**
@@ -282,8 +282,8 @@ Troubleshooting → **Enable CPU temperature** does that setup once: it installs
 (through winget), turns the web server on, and registers LibreHardwareMonitor as an
 elevated logon task, so it starts hidden at every login. Windows shows one administrator
 prompt the first time. Without it everything else keeps working, and Troubleshooting
-explains the missing reading with a download link. GPU temperatures come from NVML and
-need no helper.
+explains the missing reading with a download link. NVIDIA GPU readings come from NVML and
+need no helper; AMD and Intel GPU readings use the same LibreHardwareMonitor helper.
 
 Temperatures are stored in Celsius and drawn in the unit chosen in Settings. A line
 graph follows one metric over the selected window (5 min–3 h), keeps gaps where a

@@ -218,6 +218,38 @@ def test_send_resumes_a_paused_panel(client: TestClient, monkeypatch) -> None:
     assert client.app.state.gate.paused_snapshot() == []
 
 
+def test_send_uses_image_updates_when_native_has_no_lan(client: TestClient, monkeypatch) -> None:
+    state = client.app.state.gate
+    state.config.settings.native_stats = True
+    state.config.settings.allow_lan = False
+    theme = client.get("/api/theme").json()["theme"]
+    theme["panels"][0]["layers"].append(
+        {
+            "kind": "text",
+            "source": "static",
+            "text": "TEST",
+            "x": 4,
+            "y": 4,
+            "w": 80,
+            "h": 20,
+        }
+    )
+    assert client.put("/api/theme", json=theme).status_code == 200
+
+    called: dict[str, bool] = {}
+    monkeypatch.setattr(
+        "gate_studio.api._setup_native",
+        lambda *args, **kwargs: called.setdefault("native", True) or True,
+    )
+    monkeypatch.setattr(
+        "gate_studio.api._push",
+        lambda *args, **kwargs: called.setdefault("jpeg", True) or [],
+    )
+
+    assert client.post("/api/send").status_code == 200
+    assert called == {"jpeg": True}
+
+
 def test_send_uses_the_draft_sent_with_apply(client: TestClient, monkeypatch) -> None:
     state = client.app.state.gate
     theme = client.get("/api/theme").json()["theme"]

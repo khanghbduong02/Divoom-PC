@@ -737,7 +737,7 @@ def _push_loop(state: AppState) -> None:
         try:
             with state.frame_lock:
                 transport = state.transport()
-                if settings.native_stats:
+                if settings.native_stats and settings.allow_lan:
                     if not state.native_layouts:
                         if _setup_native(
                             state,
@@ -1279,8 +1279,10 @@ def create_app(
         _apply_draft(state, panels)
         # An explicit Apply or Send all is the user taking the screens back.
         state.resume_panels(panels)
-        if state.config.settings.native_stats and _active_native_panels(
-            state, state.applied_theme, panels
+        if (
+            state.config.settings.native_stats
+            and state.config.settings.allow_lan
+            and _active_native_panels(state, state.applied_theme, panels)
         ):
             if _setup_native(state, state.applied_theme, panels):
                 if state.last_error is not None:

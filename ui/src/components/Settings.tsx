@@ -192,9 +192,9 @@ export default function Settings({ open, onClose }: Props) {
                 </span>
               </label>
               {settings.native_stats && !settings.allow_lan && (
-                <p className="hint is-error">
-                  Native updates need network access. Turn on “Let other devices on my network
-                  open the editor” below, then restart Gate Theme Studio.
+                <p className="hint">
+                  Native updates need network access. Until you turn on “Let other devices on my
+                  network open the editor” below and restart, panels use regular image updates.
                 </p>
               )}
             </section>

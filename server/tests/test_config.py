@@ -13,6 +13,7 @@ def test_first_run_creates_defaults(tmp_path: Path) -> None:
     config = store.load()
     assert config.schema_version >= 2
     assert config.settings.auto_push is True
+    assert config.settings.native_stats is True
     assert config.settings.push_interval > 0
 
 

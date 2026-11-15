@@ -215,7 +215,7 @@ class AppSettings(BaseModel):
     auto_push: bool = True
     push_interval: float = 2.0
     #: use native text-item updates instead of full JPEG uploads after setup
-    native_stats: bool = False
+    native_stats: bool = True
     #: pause a panel when the Divoom app changes it, so the two do not fight
     external_watch: bool = True
     external_check_interval: float = 5.0

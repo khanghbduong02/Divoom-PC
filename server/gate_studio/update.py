@@ -350,11 +350,14 @@ def launch_updater(
     if not target.is_file():
         raise UpdateError("The running application path could not be found.")
 
-    script_dir = Path(data_dir) if data_dir else new_exe.parent
+    script_dir = (Path(data_dir) if data_dir else new_exe.parent).resolve()
     script_dir.mkdir(parents=True, exist_ok=True)
     script = script_dir / "apply-update.ps1"
-    log = script_dir / "apply-update.log"
-    ready = script_dir / "apply-update.ready"
+    # These must be absolute: the helper's working directory is script_dir,
+    # so a relative marker would resolve to script_dir/updates/... and never
+    # be seen by the app waiting in script_dir.
+    log = (script_dir / "apply-update.log").resolve()
+    ready = (script_dir / "apply-update.ready").resolve()
     ready.unlink(missing_ok=True)
     args = restart_args if restart_args is not None else _restart_args()
     arg_array = "@(" + ", ".join(_ps_quote(arg) for arg in args) + ")"

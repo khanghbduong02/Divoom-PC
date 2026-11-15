@@ -160,6 +160,11 @@ def test_updater_helper_clears_pyinstaller_environment(tmp_path: Path, monkeypat
     assert "Clear-PyInstallerEnvironment" in text
     assert "_PYI_APPLICATION_HOME_DIR" in text
     assert "_PYI_PARENT_PROCESS_LEVEL" in text
+    # The helper runs with its workdir inside the updates folder. Relative
+    # log/marker paths made it look for updates/updates/... and never signal
+    # readiness, so the app timed out and stayed open after downloading.
+    assert f"$log = '{tmp_path / 'apply-update.log'}'" in text
+    assert f"$ready = '{tmp_path / 'apply-update.ready'}'" in text
 
 
 def test_download_rejects_a_bad_checksum(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

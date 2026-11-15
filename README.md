@@ -68,6 +68,11 @@ and choose **Open editor**. To stop it for good, right-click the tray icon and c
 With the tray icon you can also: open the editor, send immediately, pause/resume all
 updates, and open Settings.
 
+**Updating:** v0.2.10 and newer replace themselves and restart the new version. Builds
+before v0.2.10 (including v0.2.4–v0.2.9) may stop after downloading an update instead of
+relaunching; close the old app and run the downloaded exe once. After that, in-app
+updates restart automatically.
+
 **Use it from your phone:** Settings → *Allow LAN access (phones and other devices)*
 → restart the app → open the phone address it prints. The same LAN access lets the Gate
 fetch native sensor backgrounds. The link contains a key, so treat it like a password.

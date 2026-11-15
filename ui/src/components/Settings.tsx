@@ -175,6 +175,28 @@ export default function Settings({ open, onClose }: Props) {
                 />
                 <span className="hint">seconds</span>
               </div>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={settings.native_stats}
+                  disabled={busy || !settings.auto_push}
+                  onChange={(event) => void save({ native_stats: event.target.checked })}
+                />
+                <span>
+                  Native sensor updates
+                  <em>
+                    Sends readings as text on the Gate instead of re-uploading each panel.
+                    Requires “Let other devices on my network open the editor” so the Gate can
+                    fetch the static background.
+                  </em>
+                </span>
+              </label>
+              {settings.native_stats && !settings.allow_lan && (
+                <p className="hint is-error">
+                  Native updates need network access. Turn on “Let other devices on my network
+                  open the editor” below, then restart Gate Theme Studio.
+                </p>
+              )}
             </section>
 
             <section className="step">

@@ -132,6 +132,7 @@ export interface Settings {
   push_interval: number;
   allow_lan: boolean;
   auto_push: boolean;
+  native_stats: boolean;
   external_watch: boolean;
   external_check_interval: number;
   autostart: boolean;

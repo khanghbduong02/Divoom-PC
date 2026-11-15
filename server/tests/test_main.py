@@ -6,7 +6,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
-from gate_studio.__main__ import existing_agent
+from gate_studio.__main__ import existing_agent, wait_for_agent
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
@@ -36,7 +36,7 @@ def _serve(status: int, payload: object) -> tuple[ThreadingHTTPServer, Thread]:
 def test_existing_agent_recognizes_our_health_reply() -> None:
     server, thread = _serve(200, {"ok": True, "version": "0.2.1"})
     try:
-        assert existing_agent(server.server_port, "right-token") == "ours"
+        assert existing_agent(server.server_port, "right-token") == ("ours", "0.2.1")
     finally:
         server.shutdown()
         server.server_close()
@@ -46,8 +46,15 @@ def test_existing_agent_recognizes_our_health_reply() -> None:
 def test_existing_agent_reports_a_wrong_token_as_other() -> None:
     server, thread = _serve(401, {"detail": "Unauthorized"})
     try:
-        assert existing_agent(server.server_port, "wrong-token") == "other"
+        assert existing_agent(server.server_port, "wrong-token") == ("other", None)
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_wait_for_agent_waits_for_an_older_version(monkeypatch) -> None:
+    replies = iter([("ours", "0.0.1"), ("free", None)])
+    monkeypatch.setattr("gate_studio.__main__.existing_agent", lambda *args: next(replies))
+    monkeypatch.setattr("gate_studio.__main__.time.sleep", lambda _seconds: None)
+    assert wait_for_agent(8765, "token") == ("free", None)

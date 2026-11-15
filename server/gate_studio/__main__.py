@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 import uvicorn
 
-from . import desktop
+from . import __version__, desktop
 from .api import SENSOR_SETUP_SCRIPT, create_app
 from .config import ConfigStore
 from .device import discover_cloud
@@ -80,8 +80,8 @@ def _port_open(port: int) -> bool:
         return False
 
 
-def existing_agent(port: int, token: str) -> str:
-    """Return ``"ours"``, ``"other"`` or ``"free"`` for the editor port.
+def existing_agent(port: int, token: str) -> tuple[str, str | None]:
+    """Return ``("ours", version)``, ``("other", None)`` or ``("free", None)``.
 
     ``other`` means something is listening but does not accept this data
     folder's token.  Reporting that separately keeps a second launch from
@@ -95,16 +95,36 @@ def existing_agent(port: int, token: str) -> str:
         with urllib.request.urlopen(request, timeout=1.0) as reply:
             payload = json.loads(reply.read())
     except urllib.error.HTTPError:
-        return "other" if _port_open(port) else "free"
+        return ("other", None) if _port_open(port) else ("free", None)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-        return "other" if _port_open(port) else "free"
-    if not isinstance(payload, dict):
-        return "other"
-    return "ours" if bool(payload.get("ok")) and "version" in payload else "other"
+        return ("other", None) if _port_open(port) else ("free", None)
+    if not isinstance(payload, dict) or not bool(payload.get("ok")):
+        return ("other", None)
+    return ("ours", str(payload.get("version") or ""))
+
+
+def wait_for_agent(port: int, token: str, timeout: float = 15.0) -> tuple[str, str | None]:
+    """Wait out an old process during a restart before binding the port.
+
+    The updater starts this exe as soon as the old file is replaced.  The old
+    HTTP server can still be shutting down for a moment; binding immediately
+    produces a Windows port-conflict dialog and no working app.
+    """
+    deadline = time.time() + timeout
+    while True:
+        status, version = existing_agent(port, token)
+        if status == "free":
+            return status, version
+        if status == "ours" and version == __version__:
+            return status, version
+        if time.time() >= deadline:
+            return status, version
+        time.sleep(0.4)
 
 
 def already_running(port: int, token: str) -> bool:
-    return existing_agent(port, token) == "ours"
+    status, _version = existing_agent(port, token)
+    return status == "ours"
 
 
 def report_port_conflict(port: int, silent: bool) -> None:
@@ -197,7 +217,7 @@ def main(argv: list[str] | None = None) -> None:
     host = args.host or ("0.0.0.0" if bind_lan else "127.0.0.1")
     url = f"http://localhost:{args.port}/?token={quote(token)}"
 
-    status = existing_agent(args.port, token)
+    status, _version = wait_for_agent(args.port, token)
     if status == "ours":
         print("Gate Theme Studio is already running — opening the editor.")
         if not (args.no_browser or args.silent):

@@ -68,9 +68,10 @@ and choose **Open editor**. To stop it for good, right-click the tray icon and c
 With the tray icon you can also: open the editor, send immediately, pause/resume all
 updates, and open Settings.
 
-**Use it from your phone:** Settings → *Let other devices on my network open the editor*
-→ restart the app → open the phone address it prints. The link contains a key, so treat
-it like a password. Only do this on a network you trust.
+**Use it from your phone:** Settings → *Allow LAN access (phones and other devices)*
+→ restart the app → open the phone address it prints. The same LAN access lets the Gate
+fetch native sensor backgrounds. The link contains a key, so treat it like a password.
+Only do this on a network you trust.
 
 **Where your designs live:** `%APPDATA%\GateThemeStudio` (the exact path is shown in
 Settings). Back up that folder to keep your themes; delete it to start clean.
@@ -290,9 +291,10 @@ reading was unavailable, and marks the newest sample.
 
 ## Phone access
 
-Settings → *Let other devices on my network open the editor* (or `--lan`), then restart.
+Settings → *Allow LAN access (phones and other devices)* (or `--lan`), then restart.
 The agent binds `0.0.0.0` and prints `http://<pc-ip>:8765/?token=...`. The token guards
-the API, media and the preview socket; the static page itself is public.
+the API, media and the preview socket; the static page itself is public. Native sensor
+updates use the same access so the Gate can fetch the static panel background.
 
 ## Data
 

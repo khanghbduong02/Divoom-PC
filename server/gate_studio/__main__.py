@@ -248,7 +248,9 @@ def main(argv: list[str] | None = None) -> None:
     thread = threading.Thread(target=server.run, name="agent-http", daemon=True)
     thread.start()
 
-    deadline = time.time() + 10
+    # Device setup may do network work on a slow LAN; give it room without
+    # turning a slow start into a misleading "port in use" message.
+    deadline = time.time() + 20
     while not server.started and time.time() < deadline:
         time.sleep(0.05)
 

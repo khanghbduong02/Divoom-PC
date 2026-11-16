@@ -620,6 +620,25 @@ def _reset_pic_ids(state: AppState, transport: DeviceTransport) -> None:
     log.info("Reset device PicID after %d frames", PIC_RESET_EVERY)
 
 
+def _reset_pic_ids_on_start(state: AppState) -> None:
+    """Clear the device frame IDs without delaying the local HTTP server.
+
+    A saved device can be asleep or slow.  Waiting for it here used to block
+    uvicorn's lifespan startup for up to 12 seconds, which made the main
+    process time out and report a port conflict even though no server had
+    bound the port yet.  The reset is still serialized with frame sends, but
+    it no longer prevents the editor from opening.
+    """
+    try:
+        with state.frame_lock:
+            transport = state.transport()
+            transport.reset_pic_id()
+            state.ids.reset()
+            state.frames_since_reset = 0
+    except DeviceError as exc:
+        state.last_error = exc.as_dict()
+
+
 def _push(state: AppState, panels: list[int] | None, images: list) -> list[dict[str, object]]:
     with state.frame_lock:
         transport = state.transport()
@@ -847,13 +866,14 @@ def create_app(
     async def lifespan(app: FastAPI):
         state.collector.start()
         if state.config.device.configured:
-            # PicIDs must start clean once per process or panels stay on "loading".
-            try:
-                state.transport().reset_pic_id()
-                state.ids.reset()
-                state.frames_since_reset = 0
-            except DeviceError as exc:
-                state.last_error = exc.as_dict()
+            # PicIDs must start clean once per process or panels stay on
+            # "loading", but a slow/asleep device must not hold up startup.
+            Thread(
+                target=_reset_pic_ids_on_start,
+                args=(state,),
+                name="device-reset",
+                daemon=True,
+            ).start()
         state.start_watcher()
         if state.config.settings.external_watch and state.config.device.configured:
             # Establish the Divoom-app baseline before the first automatic frame.

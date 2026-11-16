@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import time
 from pathlib import Path
 from threading import Event
 
@@ -46,6 +47,37 @@ def test_health_reports_version_and_device(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["ok"] is True
     assert body["device"]["configured"] is False
+
+
+def test_slow_device_reset_does_not_block_startup(store: ConfigStore, monkeypatch) -> None:
+    config = store.load()
+    config.device.host = "192.0.2.1"
+    config.device.port = 9000
+    config.device.protocol = "hw402"
+    config.device.device_id = 123
+    config.settings.auto_push = False
+    config.settings.external_watch = False
+    store.save(config)
+
+    reset_started = Event()
+    release_reset = Event()
+
+    def slow_reset(_state) -> None:  # noqa: ANN001 - test double
+        reset_started.set()
+        release_reset.wait(timeout=5)
+
+    monkeypatch.setattr("gate_studio.api._reset_pic_ids_on_start", slow_reset)
+    app = create_app(store, static_dir=tmp_path_missing())
+    started_at = time.monotonic()
+    try:
+        with TestClient(app) as test_client:
+            assert time.monotonic() - started_at < 2.5
+            assert reset_started.wait(timeout=1.0)
+            test_client.headers.update({"Authorization": f"Bearer {store.token()}"})
+            assert test_client.get("/api/health").status_code == 200
+            release_reset.set()
+    finally:
+        release_reset.set()
 
 
 def test_theme_round_trip(client: TestClient) -> None:

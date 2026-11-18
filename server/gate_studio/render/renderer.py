@@ -54,6 +54,62 @@ def _draw_layer(
         widgets.draw_number(draw, layer, value, now, temperature_unit)
 
 
+def render_panel_frames(
+    panel: Panel,
+    values: dict[str, float | None] | None = None,
+    media_dir: Path | None = None,
+    now: datetime | None = None,
+    *,
+    history: History | None = None,
+    temperature_unit: str = "c",
+    static_only: bool = False,
+    max_frames: int = 40,
+) -> list[tuple[Image.Image, int]]:
+    """Render one panel, preserving an animated GIF background.
+
+    A still background produces one ``(image, delay_ms)`` pair.  An animated
+    GIF is fitted frame-by-frame and keeps its delays; native text is still
+    drawn by the device on top of the hosted GIF.
+    """
+    values = values or {}
+    now = now or datetime.now()
+    history = history or {}
+    background = panel.background
+    base_color = parse_color(background.color)
+
+    sources: list[tuple[Image.Image | None, int]] = [(None, 100)]
+    if background.kind == "image":
+        sources = backgrounds.load_animation(
+            media_dir, background.image, max_frames=max_frames
+        ) or sources
+
+    rendered: list[tuple[Image.Image, int]] = []
+    for source, delay in sources:
+        if source is None:
+            canvas = Image.new("RGB", (PANEL_SIZE, PANEL_SIZE), base_color)
+        else:
+            canvas = backgrounds.fit_image(
+                source,
+                (PANEL_SIZE, PANEL_SIZE),
+                background.fit,
+                background=base_color,
+            )
+            canvas = backgrounds.dim(canvas, background.dim)
+
+        draw = ImageDraw.Draw(canvas)
+        for layer in panel.layers:
+            if static_only and (
+                (layer.kind == "metric" and layer.widget == "number")
+                or (layer.kind == "text" and layer.source in ("clock", "date"))
+            ):
+                # These become native text items on the device.  Leaving them
+                # out keeps the background free of stale duplicate values.
+                continue
+            _draw_layer(draw, layer, values, now, history, temperature_unit)
+        rendered.append((canvas, delay))
+    return rendered
+
+
 def render_panel(
     panel: Panel,
     values: dict[str, float | None] | None = None,
@@ -64,35 +120,17 @@ def render_panel(
     temperature_unit: str = "c",
     static_only: bool = False,
 ) -> Image.Image:
-    values = values or {}
-    now = now or datetime.now()
-    history = history or {}
-    background = panel.background
-    base_color = parse_color(background.color)
-
-    canvas = Image.new("RGB", (PANEL_SIZE, PANEL_SIZE), base_color)
-    if background.kind == "image":
-        source = backgrounds.load_media(media_dir, background.image)
-        if source is not None:
-            canvas = backgrounds.fit_image(
-                source,
-                (PANEL_SIZE, PANEL_SIZE),
-                background.fit,
-                background=base_color,
-            )
-            canvas = backgrounds.dim(canvas, background.dim)
-
-    draw = ImageDraw.Draw(canvas)
-    for layer in panel.layers:
-        if static_only and (
-            (layer.kind == "metric" and layer.widget == "number")
-            or (layer.kind == "text" and layer.source in ("clock", "date"))
-        ):
-            # These become native text items on the device.  Leaving them out
-            # keeps the uploaded background free of stale duplicate values.
-            continue
-        _draw_layer(draw, layer, values, now, history, temperature_unit)
-    return canvas
+    """Render the first frame, used by the live editor preview."""
+    return render_panel_frames(
+        panel,
+        values,
+        media_dir,
+        now,
+        history=history,
+        temperature_unit=temperature_unit,
+        static_only=static_only,
+        max_frames=1,
+    )[0][0]
 
 
 def render_all(
@@ -115,6 +153,34 @@ def render_all(
             history=history,
             temperature_unit=temperature_unit,
             static_only=static_only,
+        )
+        for panel in theme.panels
+    ]
+
+
+def render_all_frames(
+    theme: Theme,
+    values: dict[str, float | None] | None = None,
+    media_dir: Path | None = None,
+    now: datetime | None = None,
+    *,
+    history: History | None = None,
+    temperature_unit: str = "c",
+    static_only: bool = False,
+    max_frames: int = 40,
+) -> list[list[tuple[Image.Image, int]]]:
+    """Render every panel while preserving animated backgrounds."""
+    now = now or datetime.now()
+    return [
+        render_panel_frames(
+            panel,
+            values,
+            media_dir,
+            now,
+            history=history,
+            temperature_unit=temperature_unit,
+            static_only=static_only,
+            max_frames=max_frames,
         )
         for panel in theme.panels
     ]

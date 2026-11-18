@@ -104,11 +104,21 @@ export default function Help({ open, onClose }: Props) {
               Fahrenheit from Settings.
             </p>
             <p className="hint">
+              A panel background can be a PNG, JPEG or animated GIF. GIFs loop on the Gate
+              through the native background path, so they do not re-upload every frame;
+              convert a short video to GIF first. The PC must stay on while the GIF plays.
+            </p>
+            <p className="hint">
               If you change a screen from the Divoom app, Gate Theme Studio notices within a few
               seconds and pauses that screen so the two do not fight. Press <strong>Resume</strong>{" "}
               in the right panel when you want it back, or <strong>Apply</strong> to take the screen
               back immediately. You can also pause a screen yourself from the same panel. This watch
               uses Divoom's cloud and can be turned off in Settings.
+            </p>
+            <p className="hint">
+              When the PC or Gate restarts, <strong>Settings → Restore my panels after
+              the Gate restarts</strong> takes back screens the Divoom app changed while
+              the PC was off. Manual pauses stay paused.
             </p>
           </section>
 

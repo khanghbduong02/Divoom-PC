@@ -234,11 +234,14 @@ fresh machine shows a SmartScreen prompt.
   Reorder, hide or delete from the list. Each metric can be shown as the **value right
   now**, a **progress bar**, or a **line graph** of the past 5 minutes to 3 hours
   (history builds while the app runs).
-- **Inspector** — per panel: background colour or image (fit / crop / stretch, dim),
-  accent colour, **Theme for this panel only**, **Save panel** / **Saved panel designs**,
-  **Pause updates for this screen**, **Remove all layers from this panel**. Per layer:
-  metric, widget (big number or bar), position, size, colour, text sizing, decimals,
-  unit, gauge min/max, alignment.
+- **Inspector** — per panel: background colour, image or animated GIF (fit / crop /
+  stretch, dim), accent colour, **Theme for this panel only**, **Save panel** /
+  **Saved panel designs**, **Pause updates for this screen**, **Remove all layers from
+  this panel**. Per layer: metric, widget (big number or bar), position, size, colour,
+  text sizing, decimals, unit, gauge min/max, alignment. Animated GIFs loop through
+  the native item-list path (up to 40 frames), so they do not re-upload a JPEG every
+  frame. Video is not accepted directly; convert a short clip to GIF first. GIFs need
+  the PC running because the Gate fetches the loop over your LAN.
 - **Toolbar** — choose a built-in or saved theme and press **Apply**; **Save theme** keeps
   the current five-panel draft for reuse; **Send all** forces an immediate update of the
   edited panels and skips empty ones; **Help** has the end-user guide; **Settings** controls
@@ -251,6 +254,14 @@ stay live, sends only panels whose pixels changed, retries after the display reb
 and clears its cache once a minute so a display that was power-cycled still gets a fresh
 frame. Draft changes reach the display only through **Apply** (one panel) or
 **Send all**.
+
+When the app or the Gate restarts, **Settings → Restore my panels after the Gate
+restarts** clears screens the Divoom app changed while the PC was off and re-installs
+the saved design. A Divoom-app pause is not treated as permanent; manual pauses stay
+until you resume them. The local API cannot store a custom screen in the Gate's own
+flash, so this re-push is the persistence mechanism. If the PC and Gate are both off,
+there is no PC data to render; the device shows its last content until the app starts
+and reconnects.
 
 ### When the Divoom app changes a screen
 
@@ -383,8 +394,8 @@ Whatever the device replied is shown verbatim in the wizard and in **Troubleshoo
 
 ## Not in this milestone
 
-- GIF and video backgrounds, panorama across five panels, sparkline and ring gauges,
-  thermometer, undo/redo, per-panel copy (M3)
+- Direct video backgrounds (convert video to GIF first), panorama across five panels,
+  sparkline and ring gauges, thermometer, undo/redo, per-panel copy (M3)
 - Theme export/import UI, "hand back to Divoom face" (M4 remainder)
 - Divoom account import of gallery backgrounds, multiple devices, Docker image (M5)
 

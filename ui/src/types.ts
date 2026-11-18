@@ -133,6 +133,7 @@ export interface Settings {
   allow_lan: boolean;
   auto_push: boolean;
   native_stats: boolean;
+  restore_on_start: boolean;
   external_watch: boolean;
   external_check_interval: number;
   autostart: boolean;

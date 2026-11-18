@@ -16,7 +16,7 @@ from gate_studio.api import _push, _setup_native, create_app
 from gate_studio.config import ConfigStore
 from gate_studio.device.external import ExternalSnapshot
 from gate_studio.library import SavedLibrary
-from gate_studio.models import Layer
+from gate_studio.models import Layer, PausedPanel
 from gate_studio.update import UpdateInfo
 
 
@@ -47,6 +47,55 @@ def test_health_reports_version_and_device(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["ok"] is True
     assert body["device"]["configured"] is False
+
+
+def test_startup_restores_external_pauses(store: ConfigStore) -> None:
+    config = store.load()
+    config.paused_panels = [
+        PausedPanel(panel=0, source="external", reason="Divoom app"),
+        PausedPanel(panel=1, source="manual", reason="keep this off"),
+    ]
+    config.settings.restore_on_start = True
+    store.save(config)
+
+    app = create_app(store, static_dir=tmp_path_missing())
+    with TestClient(app) as test_client:
+        test_client.headers.update({"Authorization": f"Bearer {store.token()}"})
+        paused = test_client.app.state.gate.paused_snapshot()
+
+    assert [(item["panel"], item["source"]) for item in paused] == [(1, "manual")]
+
+
+def test_rediscovery_follows_a_changed_device_address(
+    client: TestClient, monkeypatch
+) -> None:
+    from gate_studio.device import ProbeOutcome
+
+    state = client.app.state.gate
+    state.config.device.host = "192.0.2.1"
+    state.config.device.port = 9000
+    state.config.device.protocol = "hw402"
+    state.config.device.device_id = 123
+
+    monkeypatch.setattr(
+        "gate_studio.api.discover_cloud",
+        lambda timeout=4.0: [{"ip": "192.0.2.9", "device_id": 123}],
+    )
+    monkeypatch.setattr(
+        "gate_studio.api.probe_endpoint",
+        lambda host, protocol, token, timeout: ProbeOutcome(
+            host=host,
+            port=9000,
+            protocol=protocol,
+            ok=True,
+            kind="ok",
+            message="ok",
+        ),
+    )
+
+    assert state.maybe_rediscover() is True
+    assert state.config.device.host == "192.0.2.9"
+    assert state.config.device.port == 9000
 
 
 def test_slow_device_reset_does_not_block_startup(store: ConfigStore, monkeypatch) -> None:

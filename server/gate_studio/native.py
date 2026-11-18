@@ -162,12 +162,14 @@ def save_background(
     store: ConfigStore,
     theme_id: str,
     panel: int,
-    image: Image.Image,
+    image: Image.Image | list[Image.Image],
+    durations: list[int] | None = None,
 ) -> str:
-    """Save a static panel background as a device-safe GIF.
+    """Save a panel background as a device-safe still or animated GIF.
 
     The Times Gate treats GIF palette index 0 as transparent, so index 0 is
     reserved for an unused sentinel and the rendered colours start at index 1.
+    Animated backgrounds keep their frame delays and loop forever.
     """
     store.ensure_dirs()
     for old in store.media_dir.glob(f"native-{theme_id[:10]}-{panel}-*.gif"):
@@ -175,10 +177,31 @@ def save_background(
             old.unlink()
     name = f"native-{theme_id[:10]}-{panel}-{uuid.uuid4().hex[:6]}.gif"
     path: Path = store.media_path(name)
-    paletted = image.convert("RGB").quantize(colors=255)
-    source_palette = (list(paletted.getpalette() or []) + [0] * 768)[:765]
-    output = Image.new("P", paletted.size)
-    output.putpalette([1, 2, 3, *source_palette])
-    output.putdata([index + 1 for index in paletted.getdata()])
-    output.save(path, format="GIF", optimize=False)
+    images = image if isinstance(image, list) else [image]
+    images = images[:40]
+    if not images:
+        raise ValueError("background has no frames")
+
+    def frame(source: Image.Image) -> Image.Image:
+        paletted = source.convert("RGB").quantize(colors=255)
+        source_palette = (list(paletted.getpalette() or []) + [0] * 768)[:765]
+        output = Image.new("P", paletted.size)
+        output.putpalette([1, 2, 3, *source_palette])
+        output.putdata([index + 1 for index in paletted.getdata()])
+        return output
+
+    frames = [frame(item) for item in images]
+    delays = (durations or [100] * len(frames))[: len(frames)]
+    if len(delays) < len(frames):
+        delays += [delays[-1] if delays else 100] * (len(frames) - len(delays))
+    frames[0].save(
+        path,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=[max(30, min(1000, int(delay))) for delay in delays],
+        loop=0,
+        optimize=False,
+        disposal=2,
+    )
     return name

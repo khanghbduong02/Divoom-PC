@@ -219,6 +219,23 @@ export default function Settings({ open, onClose }: Props) {
               <label className="check-row">
                 <input
                   type="checkbox"
+                  checked={settings.restore_on_start}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void save({ restore_on_start: event.target.checked })
+                  }
+                />
+                <span>
+                  Restore my panels after the Gate restarts
+                  <em>
+                    When the app or the Gate starts again, take back screens the Divoom
+                    app changed while the PC was off. Manual pauses stay paused.
+                  </em>
+                </span>
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
                   checked={settings.external_watch}
                   disabled={busy}
                   onChange={(event) => void save({ external_watch: event.target.checked })}

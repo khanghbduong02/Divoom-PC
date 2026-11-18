@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
+from PIL import Image
+
+from gate_studio.config import ConfigStore
 from gate_studio.models import Layer, Panel
-from gate_studio.native import build_items, dynamic_layers, setup_items
+from gate_studio.native import build_items, dynamic_layers, save_background, setup_items
 
 
 def _panel() -> Panel:
@@ -54,3 +58,16 @@ def test_setup_items_adds_a_throwaway_first_item() -> None:
     assert items[0]["TextString"] == "."
     assert items[0]["TextId"] not in {item["TextId"] for item in items[1:]}
     assert items[1]["TextString"] == "12%"
+
+
+def test_save_background_writes_an_animated_gif(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "data")
+    frames = [
+        Image.new("RGB", (128, 128), (200, 10, 10)),
+        Image.new("RGB", (128, 128), (10, 10, 200)),
+    ]
+    name = save_background(store, "theme-123456789", 2, frames, [120, 180])
+    path = store.media_path(name)
+    with Image.open(path) as output:
+        assert output.n_frames == 2
+        assert output.info.get("duration") in (120, 180)

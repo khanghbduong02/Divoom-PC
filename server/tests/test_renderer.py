@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 from gate_studio.models import Background, Layer, Panel, Theme
-from gate_studio.render import font, render_all, render_panel
+from gate_studio.render import font, render_all, render_all_frames, render_panel
 from gate_studio.render.renderer import encode_jpeg, encode_png, render_test_panel
 
 
@@ -67,6 +67,28 @@ def test_background_image_is_fitted(tmp_path: Path) -> None:
     image = render_panel(panel, media_dir=tmp_path)
     assert image.getpixel((64, 64))[0] > 150
     assert image.getpixel((64, 64))[1] < 60
+
+
+def test_animated_gif_background_keeps_its_frames(tmp_path: Path) -> None:
+    frames = [
+        Image.new("RGB", (128, 128), (200, 10, 10)),
+        Image.new("RGB", (128, 128), (10, 10, 200)),
+    ]
+    frames[0].save(
+        tmp_path / "loop.gif",
+        save_all=True,
+        append_images=frames[1:],
+        duration=[120, 180],
+        loop=0,
+    )
+    panel = Panel(background=Background(kind="image", image="loop.gif", fit="stretch"))
+    rendered = render_all_frames(
+        Theme(panels=[panel, Panel(), Panel(), Panel(), Panel()]),
+        media_dir=tmp_path,
+    )[0]
+    assert len(rendered) == 2
+    assert [delay for _image, delay in rendered] == [120, 180]
+    assert rendered[0][0].getpixel((64, 64)) != rendered[1][0].getpixel((64, 64))
 
 
 def test_missing_background_file_falls_back_to_colour(tmp_path: Path) -> None:

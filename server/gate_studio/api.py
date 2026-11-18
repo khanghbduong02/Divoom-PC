@@ -37,7 +37,9 @@ from .device import (
     FrameIds,
     diff_snapshots,
     discover,
+    discover_cloud,
     fetch_snapshot,
+    probe_endpoint,
     probe_host,
 )
 from .library import SavedLibrary
@@ -50,7 +52,7 @@ from .panel_exchange import (
     parse_panel_import,
 )
 from .presets import list_presets, load_preset
-from .render import encode_jpeg, encode_png, render_all
+from .render import encode_jpeg, encode_png, render_all, render_all_frames
 from .render.renderer import render_test_panel
 from .sensors import SensorCollector
 from .update import (
@@ -138,6 +140,8 @@ class AppState:
         self._push_thread: Thread | None = None
         self._stop_push = Event()
         self._next_push = 0.0
+        self.device_online = False
+        self._last_rediscovery = 0.0
 
         # Divoom-cloud watcher; separate from the push loop so a slow cloud
         # request can never hold up sensor updates.
@@ -240,6 +244,67 @@ class AppState:
             self._transport_key = key
         return self._transport
 
+    def note_device_offline(self) -> None:
+        """Forget device-held state so the next connection rebuilds it.
+
+        A Times Gate does not keep local custom item lists across every reboot.
+        Keeping ``native_layouts`` around would make the next successful call
+        send only text updates to a panel whose background is gone.
+        """
+        self.device_online = False
+        self.native_layouts.clear()
+        self.last_frames.clear()
+
+    def maybe_rediscover(self) -> bool:
+        """Follow a Gate whose DHCP address changed after a reboot.
+
+        The saved IP is only a hint. Divoom's LAN discovery returns the
+        current address; match it by the stable device id and probe both
+        hardware revisions before updating the config.
+        """
+        device = self.config.device
+        if not device.configured or device.device_id is None:
+            return False
+        now = time.monotonic()
+        if now - self._last_rediscovery < 30.0:
+            return False
+        self._last_rediscovery = now
+        try:
+            found = discover_cloud(timeout=4.0)
+        except DeviceError:
+            return False
+        candidates = [
+            item
+            for item in found
+            if str(item.get("device_id")) == str(device.device_id)
+            and item.get("ip")
+        ]
+        if not candidates:
+            return False
+        host = str(candidates[0]["ip"])
+        protocols = (device.protocol, "hw400" if device.protocol == "hw402" else "hw402")
+        for protocol in protocols:
+            outcome = probe_endpoint(host, protocol, device.local_token, timeout=6.0)
+            if not outcome.ok:
+                continue
+            if host != device.host or outcome.protocol != device.protocol:
+                log.info(
+                    "device moved to %s:%s (%s); updating saved connection",
+                    host,
+                    outcome.port,
+                    outcome.protocol,
+                )
+                device.host = host
+                device.port = outcome.port
+                device.protocol = outcome.protocol
+                self.close_transport()
+                self.external_snapshot = None
+                self._watch_next = 0.0
+                self.save()
+            self.device_online = True
+            return True
+        return False
+
     def device_summary(self) -> dict[str, object]:
         device = self.config.device
         return {
@@ -311,6 +376,23 @@ class AppState:
                 if changed:
                     self._save_pauses_locked()
         return self.paused_snapshot()
+
+    def resume_external_pauses(self) -> list[int]:
+        """Take back screens the Divoom app changed while our app was away.
+
+        Manual pauses are deliberate and stay.  External pauses are cleared
+        when restoring after an app/device restart.
+        """
+        with self._pause_lock:
+            indices = [
+                index
+                for index, panel in self.paused_panels.items()
+                if panel.source == "external"
+            ]
+        if indices:
+            self.resume_panels(indices)
+            log.info("restored %d screen(s) after restart", len(indices))
+        return indices
 
     def clear_pauses(self) -> None:
         self.resume_panels(list(range(5)))
@@ -413,6 +495,7 @@ class SettingsPatch(BaseModel):
     allow_lan: bool | None = None
     auto_push: bool | None = None
     native_stats: bool | None = None
+    restore_on_start: bool | None = None
     external_watch: bool | None = None
     external_check_interval: float | None = Field(default=None, ge=2, le=60)
     autostart: bool | None = None
@@ -482,6 +565,30 @@ def _render_theme(state: AppState, theme: Theme, *, static_only: bool = False) -
     )
 
 
+def _render_theme_frames(
+    state: AppState, theme: Theme, *, static_only: bool = False
+) -> list[list[tuple]]:
+    """Render every panel without collapsing animated GIF backgrounds."""
+    windows: dict[str, int] = {}
+    for panel in theme.panels:
+        for layer in panel.layers:
+            if layer.kind == "metric" and layer.visible and layer.widget == "line":
+                windows[layer.metric] = max(windows.get(layer.metric, 0), layer.history_minutes)
+    history: dict[str, list[tuple[float, float | None]]] = {}
+    if windows:
+        full = state.collector.history_window(max(windows.values()) * 60)
+        history = {metric: full[metric] for metric in windows if metric in full}
+    return render_all_frames(
+        theme,
+        state.collector.snapshot(),
+        state.store.media_dir,
+        history=history,
+        temperature_unit=state.config.settings.temperature_unit,
+        static_only=static_only,
+        max_frames=40,
+    )
+
+
 def _lan_ip() -> str | None:
     """Best-effort LAN address the Times Gate can use to fetch a background."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -534,13 +641,20 @@ def _setup_native(state: AppState, theme: Theme, panels: list[int]) -> bool:
         return False
     values = state.collector.snapshot()
     now = datetime.now()
-    images = _render_theme(state, theme, static_only=True)
+    rendered = _render_theme_frames(state, theme, static_only=True)
     transport = state.transport()
     layouts: dict[int, NativePanel] = {}
     with state.frame_lock:
         try:
             for index in targets:
-                name = save_background(state.store, theme.id, index, images[index])
+                frames = rendered[index]
+                name = save_background(
+                    state.store,
+                    theme.id,
+                    index,
+                    [image for image, _delay in frames],
+                    [delay for _image, delay in frames],
+                )
                 url = _background_url(state, name)
                 if url is None:
                     raise DeviceError(
@@ -743,6 +857,10 @@ def _push_loop(state: AppState) -> None:
         settings = state.config.settings
         if not settings.auto_push or not state.config.device.configured:
             continue
+        if settings.restore_on_start and not state.device_online:
+            # The Gate boots into its last Divoom face. Take the screens back
+            # once it is reachable again, including after a DHCP change.
+            state.resume_external_pauses()
         state.ensure_watcher()
         now = time.monotonic()
         if now < state._next_push:
@@ -758,10 +876,18 @@ def _push_loop(state: AppState) -> None:
                             state.applied_theme,
                             _edited_panels(state.applied_theme),
                         ):
+                            state.device_online = True
                             state.last_push_at = time.time()
                             continue
+                        if state.last_error is not None:
+                            state.note_device_offline()
+                            state.maybe_rediscover()
                     if state.native_layouts:
-                        _update_native(state)
+                        if _update_native(state):
+                            state.device_online = True
+                        else:
+                            state.note_device_offline()
+                            state.maybe_rediscover()
                     # Do not fall back to a JPEG upload here: that is what
                     # causes the device-wide loading flash.  If native setup
                     # failed, the last stable screen stays untouched.
@@ -784,11 +910,13 @@ def _push_loop(state: AppState) -> None:
                     result = _send_panel(state, transport, payload, index)
                     state.last_frames[index] = payload
                     state.last_replies = [result]
+                state.device_online = True
                 state.last_push_at = time.time()
                 state.last_error = None
         except DeviceError as exc:
             state.last_error = exc.as_dict()
-            state.last_frames.clear()
+            state.note_device_offline()
+            state.maybe_rediscover()
             state._next_push = time.monotonic() + max(3.0, settings.push_interval)
         except Exception as exc:  # noqa: BLE001 - the loop must survive anything
             state.last_error = {
@@ -797,7 +925,7 @@ def _push_loop(state: AppState) -> None:
                 "raw": None,
                 "hint": None,
             }
-            state.last_frames.clear()
+            state.note_device_offline()
 
 
 def _watch_loop(state: AppState) -> None:
@@ -865,6 +993,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         state.collector.start()
+        # The device and the PC usually restart together. Screens the Divoom
+        # app owned while the PC was off must not keep blocking our design.
+        # Manual pauses are left alone.
+        if state.config.settings.restore_on_start:
+            state.resume_external_pauses()
+        state.native_layouts.clear()
         if state.config.device.configured:
             # PicIDs must start clean once per process or panels stay on
             # "loading", but a slow/asleep device must not hold up startup.
@@ -924,6 +1058,11 @@ def create_app(
             settings.native_stats = patch.native_stats
             state.native_layouts.clear()
             state.last_error = None
+        if patch.restore_on_start is not None:
+            settings.restore_on_start = patch.restore_on_start
+            state.native_layouts.clear()
+            if patch.restore_on_start:
+                state.resume_external_pauses()
         if patch.external_watch is not None:
             if settings.external_watch != patch.external_watch:
                 state.external_snapshot = None

@@ -216,6 +216,9 @@ class AppSettings(BaseModel):
     push_interval: float = 2.0
     #: use native text-item updates instead of full JPEG uploads after setup
     native_stats: bool = True
+    #: take the screens back when the app or the Gate restarts, instead of
+    #: leaving them paused because the Divoom app owned them while offline
+    restore_on_start: bool = True
     #: pause a panel when the Divoom app changes it, so the two do not fight
     external_watch: bool = True
     external_check_interval: float = 5.0

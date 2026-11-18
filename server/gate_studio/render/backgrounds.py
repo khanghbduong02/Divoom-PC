@@ -12,25 +12,60 @@ from ..models import Background
 RGB = tuple[int, int, int]
 
 
-@lru_cache(maxsize=48)
-def _open_cached(path: str, _mtime: float) -> Image.Image:
+@lru_cache(maxsize=16)
+def _open_animation_cached(path: str, _mtime: float) -> tuple[tuple[Image.Image, ...], tuple[int, ...]]:
+    """Decode a still or animated GIF once, with per-frame delays."""
     with Image.open(path) as image:
         image.load()
-        return image.convert("RGB")
+        frames: list[Image.Image] = []
+        delays: list[int] = []
+        count = max(1, int(getattr(image, "n_frames", 1)))
+        for index in range(count):
+            image.seek(index)
+            frames.append(image.convert("RGB"))
+            try:
+                delay = int(image.info.get("duration") or 100)
+            except (TypeError, ValueError):
+                delay = 100
+            delays.append(max(30, min(1000, delay)))
+        return tuple(frames), tuple(delays)
 
 
-def load_media(media_dir: Path | None, name: str | None) -> Image.Image | None:
+def load_animation(
+    media_dir: Path | None,
+    name: str | None,
+    *,
+    max_frames: int = 40,
+) -> list[tuple[Image.Image, int]]:
+    """Return ``(RGB frame, delay_ms)`` pairs for a still or animated image."""
     if media_dir is None or not name:
-        return None
+        return []
     path = Path(media_dir) / Path(name).name
     try:
         mtime = path.stat().st_mtime
     except OSError:
-        return None
+        return []
     try:
-        return _open_cached(str(path), mtime)
+        frames, delays = _open_animation_cached(str(path), mtime)
     except (OSError, ValueError):
-        return None
+        return []
+    if len(frames) > max_frames:
+        # Sample across the animation rather than dropping the end.
+        if max_frames <= 1:
+            indexes = [0]
+        else:
+            indexes = [
+                round(index * (len(frames) - 1) / (max_frames - 1))
+                for index in range(max_frames)
+            ]
+        frames = tuple(frames[index] for index in indexes)
+        delays = tuple(delays[index] for index in indexes)
+    return list(zip(frames, delays))
+
+
+def load_media(media_dir: Path | None, name: str | None) -> Image.Image | None:
+    frames = load_animation(media_dir, name, max_frames=1)
+    return frames[0][0] if frames else None
 
 
 def fit_image(

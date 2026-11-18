@@ -98,6 +98,49 @@ def test_rediscovery_follows_a_changed_device_address(
     assert state.config.device.port == 9000
 
 
+def test_rediscovery_scans_the_lan_when_cloud_discovery_is_empty(
+    client: TestClient, monkeypatch
+) -> None:
+    from gate_studio.device import ProbeOutcome
+
+    state = client.app.state.gate
+    state.config.device.host = "192.0.2.1"
+    state.config.device.port = 9000
+    state.config.device.protocol = "hw402"
+    state.config.device.device_id = 123
+
+    monkeypatch.setattr("gate_studio.api.discover_cloud", lambda timeout=4.0: [])
+    monkeypatch.setattr("gate_studio.api.local_prefixes", lambda: ["192.0.2"])
+    monkeypatch.setattr(
+        "gate_studio.api.scan_subnet",
+        lambda prefix, token, timeout=0.8: [
+            ProbeOutcome(
+                host="192.0.2.9",
+                port=9000,
+                protocol="hw402",
+                ok=True,
+                kind="ok",
+                message="ok",
+                raw="{'DeviceId': 123}",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "gate_studio.api.probe_endpoint",
+        lambda host, protocol, token, timeout: ProbeOutcome(
+            host=host,
+            port=9000,
+            protocol=protocol,
+            ok=True,
+            kind="ok",
+            message="ok",
+        ),
+    )
+
+    assert state.maybe_rediscover() is True
+    assert state.config.device.host == "192.0.2.9"
+
+
 def test_slow_device_reset_does_not_block_startup(store: ConfigStore, monkeypatch) -> None:
     config = store.load()
     config.device.host = "192.0.2.1"

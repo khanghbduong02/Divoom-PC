@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import contextlib
@@ -41,7 +42,9 @@ from .device import (
     fetch_snapshot,
     probe_endpoint,
     probe_host,
+    scan_subnet,
 )
+from .device.discovery import local_prefixes
 from .library import SavedLibrary
 from .models import AppConfig, AppSettings, Background, DeviceConfig, Panel, PausedPanel, Theme
 from .native import NativePanel, build_items, save_background, setup_items
@@ -280,29 +283,51 @@ class AppState:
             and item.get("ip")
         ]
         if not candidates:
-            return False
-        host = str(candidates[0]["ip"])
-        protocols = (device.protocol, "hw400" if device.protocol == "hw402" else "hw402")
-        for protocol in protocols:
-            outcome = probe_endpoint(host, protocol, device.local_token, timeout=6.0)
-            if not outcome.ok:
-                continue
-            if host != device.host or outcome.protocol != device.protocol:
-                log.info(
-                    "device moved to %s:%s (%s); updating saved connection",
-                    host,
-                    outcome.port,
-                    outcome.protocol,
-                )
-                device.host = host
-                device.port = outcome.port
-                device.protocol = outcome.protocol
-                self.close_transport()
-                self.external_snapshot = None
-                self._watch_next = 0.0
-                self.save()
-            self.device_online = True
-            return True
+            # Divoom's cloud discovery is often empty even when the Gate is on
+            # the LAN.  Fall back to the same subnet scan the wizard uses and
+            # match the stable DeviceId from the reply.
+            for prefix in local_prefixes()[:2]:
+                for outcome in scan_subnet(prefix, device.local_token, timeout=0.8):
+                    if not outcome.ok or not outcome.raw:
+                        continue
+                    try:
+                        raw = ast.literal_eval(outcome.raw)
+                    except (ValueError, SyntaxError):
+                        continue
+                    if isinstance(raw, dict) and str(raw.get("DeviceId")) == str(device.device_id):
+                        candidates = [{"ip": outcome.host, "protocol": outcome.protocol}]
+                        break
+                if candidates:
+                    break
+        for candidate in candidates:
+            host = str(candidate["ip"])
+            known_protocol = candidate.get("protocol")
+            preferred = (
+                known_protocol
+                if known_protocol in ("hw400", "hw402")
+                else device.protocol
+            )
+            protocols = (preferred, "hw400" if preferred == "hw402" else "hw402")
+            for protocol in dict.fromkeys(protocols):
+                outcome = probe_endpoint(host, protocol, device.local_token, timeout=6.0)
+                if not outcome.ok:
+                    continue
+                if host != device.host or outcome.protocol != device.protocol:
+                    log.info(
+                        "device moved to %s:%s (%s); updating saved connection",
+                        host,
+                        outcome.port,
+                        outcome.protocol,
+                    )
+                    device.host = host
+                    device.port = outcome.port
+                    device.protocol = outcome.protocol
+                    self.close_transport()
+                    self.external_snapshot = None
+                    self._watch_next = 0.0
+                    self.save()
+                self.device_online = True
+                return True
         return False
 
     def device_summary(self) -> dict[str, object]:

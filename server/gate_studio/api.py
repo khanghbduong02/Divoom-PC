@@ -144,6 +144,9 @@ class AppState:
         self._stop_push = Event()
         self._next_push = 0.0
         self.device_online = False
+        #: take the screens back after the Gate was unreachable, without letting
+        #: the Divoom-app watcher pause them again while it boots
+        self.takeover_pending = bool(self.config.settings.restore_on_start)
         self._last_rediscovery = 0.0
 
         # Divoom-cloud watcher; separate from the push loop so a slow cloud
@@ -257,6 +260,8 @@ class AppState:
         self.device_online = False
         self.native_layouts.clear()
         self.last_frames.clear()
+        if self.config.settings.restore_on_start:
+            self.takeover_pending = True
 
     def maybe_rediscover(self) -> bool:
         """Follow a Gate whose DHCP address changed after a reboot.
@@ -882,7 +887,7 @@ def _push_loop(state: AppState) -> None:
         settings = state.config.settings
         if not settings.auto_push or not state.config.device.configured:
             continue
-        if settings.restore_on_start and not state.device_online:
+        if state.takeover_pending and settings.restore_on_start:
             # The Gate boots into its last Divoom face. Take the screens back
             # once it is reachable again, including after a DHCP change.
             state.resume_external_pauses()
@@ -902,6 +907,7 @@ def _push_loop(state: AppState) -> None:
                             _edited_panels(state.applied_theme),
                         ):
                             state.device_online = True
+                            state.takeover_pending = False
                             state.last_push_at = time.time()
                             continue
                         if state.last_error is not None:
@@ -910,6 +916,7 @@ def _push_loop(state: AppState) -> None:
                     if state.native_layouts:
                         if _update_native(state):
                             state.device_online = True
+                            state.takeover_pending = False
                         else:
                             state.note_device_offline()
                             state.maybe_rediscover()
@@ -936,6 +943,7 @@ def _push_loop(state: AppState) -> None:
                     state.last_frames[index] = payload
                     state.last_replies = [result]
                 state.device_online = True
+                state.takeover_pending = False
                 state.last_push_at = time.time()
                 state.last_error = None
         except DeviceError as exc:
@@ -970,7 +978,12 @@ def _watch_loop(state: AppState) -> None:
                     raise ExternalWatchError("The display's Divoom device id is not known yet.")
                 takeover = state.takeover_version()
                 snapshot = fetch_snapshot(device_id)
-                state.apply_external_snapshot(snapshot, takeover_version=takeover)
+                if state.takeover_pending and settings.restore_on_start:
+                    # The Gate is rebooting into its Divoom face. Remember the
+                    # baseline but do not treat that face as a user takeover.
+                    state.external_snapshot = snapshot
+                else:
+                    state.apply_external_snapshot(snapshot, takeover_version=takeover)
                 state.external_status = {
                     "ok": True,
                     "last_checked": time.time(),
